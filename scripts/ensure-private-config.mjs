@@ -10,7 +10,10 @@ try {
   throw error;
 }
 
-const keys = { RI_ENCRYPTION_KEY: () => randomBytes(32).toString("base64url") };
+const keys = {
+  RI_ENCRYPTION_KEY: () => randomBytes(32).toString("base64url"),
+  DASHBOARD_SESSION_SECRET: () => randomBytes(32).toString("hex"),
+};
 if (process.argv.includes("--api")) {
   keys.HOPPSCOTCH_DB_PASSWORD = () => randomBytes(32).toString("hex");
   keys.HOPPSCOTCH_ENCRYPTION_KEY = () => randomBytes(16).toString("hex");

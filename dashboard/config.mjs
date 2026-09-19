@@ -5,6 +5,7 @@ export function configFrom(env = process.env) {
     port: Number(env.PORT || 8787),
     bind: env.DASHBOARD_BIND || "127.0.0.1",
     password: env.DASHBOARD_PASSWORD,
+    sessionSecret: env.DASHBOARD_SESSION_SECRET,
     telemetryToken: env.TELEMETRY_TOKEN,
     pg: {
       host: env.PGHOST || host,

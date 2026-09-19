@@ -25,7 +25,7 @@
 }
 .range-picker button[aria-pressed="true"] {
   background: white;
-  color: #3655b8;
+  color: var(--accent);
   box-shadow: 0 1px 4px #00000010;
 }
 .system-controls > .button {
@@ -483,7 +483,7 @@
   text-overflow: ellipsis;
 }
 .container-name:hover strong {
-  color: var(--blue);
+  color: var(--accent);
 }
 .container-table td:first-child > small {
   max-width: 260px;

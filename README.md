@@ -173,7 +173,8 @@ This is trusted-team development infrastructure—not an Internet-facing control
 
 - Data ports bind only to `SHARED_INFRA_BIND_IP` (normally the devbox Tailnet address).
 - The gateway may bind to all local interfaces so the short devbox hostname works on the LAN.
-- Dashboard sessions are `HttpOnly`, `SameSite=Strict`, and expire after 12 hours or a restart.
+- Dashboard sessions are `HttpOnly`, `SameSite=Strict`, and expire after 12 hours, or 30 days with **Remember this device**. Only enable this on a device you trust; no password is saved in browser storage. Your browser's password manager can save the password separately.
+- The Compose wrapper generates a private `DASHBOARD_SESSION_SECRET` in `.env` so sessions survive restarts. Changing that key or `DASHBOARD_PASSWORD` invalidates all sessions after redeploying. Sign out clears this browser's cookie; it does not revoke copies of the token. Standalone runs without a signing key invalidate sessions on restart.
 - Tool routes reuse dashboard authentication through Caddy `forward_auth`.
 - Database browsing is read-only; there is no arbitrary SQL console or destructive cleanup UI.
 - Images are versioned, critical additions are digest-pinned, containers use bounded memory, and logs rotate.

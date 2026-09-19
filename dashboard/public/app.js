@@ -121,7 +121,14 @@ async function api(path, options = {}) {
 function login() {
   disposeSystem();
   state.sequence++;
-  root.innerHTML = `<main class="login"><section class="login-art"><a class="brand" href="/"><img src="/mark.svg" alt="">Wardroom</a><div><div class="login-network">${icon("server")}<div class="orbit">${icon("database")}${icon("redis")}${icon("storage")}${icon("mail")}</div></div><h1>One home for<br>everything underneath.</h1><p>Your databases, storage and services.<br>Running together. Out of your way.</p></div><span class="login-foot">Shared infrastructure <span>Built for your team</span></span></section><section class="login-form"><div class="login-inner"><span class="lock-tile">${icon("lock")}</span><h2>Your workspace is ready.</h2><p>Sign in to explore and manage your shared infrastructure.</p><form id="login-form"><label for="password">Dashboard password</label><input id="password" name="password" type="password" autocomplete="current-password" required placeholder="Enter your dashboard password"><p class="form-error" role="alert"></p><button class="button primary" type="submit">Open workspace ${icon("arrow")}</button></form><div class="private-note">${icon("globe")} Private workspace on your Tailnet</div></div></section></main>`;
+  root.innerHTML = `<main class="login"><section class="login-art"><a class="brand" href="/"><img src="/mark.svg" alt="">Wardroom<small class="brand-credit">by DevX</small></a><div><div class="login-network">${icon("server")}<div class="orbit">${icon("database")}${icon("redis")}${icon("storage")}${icon("mail")}</div></div><h1>One home for<br>everything underneath.</h1><p>Your databases, storage and services.<br>Running together. Out of your way.</p></div><span class="login-foot">Shared infrastructure <span>Built for your team</span></span></section><section class="login-form"><div class="login-inner"><span class="lock-tile">${icon("lock")}</span><h2>Your workspace is ready.</h2><p>Sign in to explore and manage your shared infrastructure.</p><form id="login-form"><label for="password">Dashboard password</label><input id="password" name="password" type="password" autocomplete="current-password" required placeholder="Enter your dashboard password"><p class="form-error" role="alert"></p><button class="button primary" type="submit">Open workspace ${icon("arrow")}</button></form><div class="private-note">${icon("globe")} Private workspace on your Tailnet</div></div></section></main>`;
+  document
+    .querySelector("#login-form")
+    .querySelector(".form-error")
+    .insertAdjacentHTML(
+      "beforebegin",
+      `<label class="remember-device"><input type="checkbox" name="rememberDevice" aria-describedby="remember-help"><span>Remember this device</span></label><p id="remember-help" class="remember-help">Stay signed in for 30 days. Only on a device you trust.</p>`,
+    );
   document
     .querySelector("#login-form")
     .addEventListener("submit", async (e) => {
@@ -134,6 +141,8 @@ function login() {
           method: "POST",
           body: JSON.stringify({
             password: new FormData(e.target).get("password"),
+            rememberDevice:
+              new FormData(e.target).get("rememberDevice") === "on",
           }),
         });
         await boot();
@@ -154,7 +163,7 @@ function shell() {
     storage: "Storage",
     operations: "Operations",
   };
-  root.innerHTML = `<div class="app-shell"><aside class="sidebar"><a class="brand" href="#overview"><img src="/mark.svg" alt="">Wardroom</a><div class="workspace-switch">${icon("server")}<div>Development<span>Shared host · Tailnet</span></div><span class="online-dot"></span></div><nav aria-label="Main navigation">${Object.entries(
+  root.innerHTML = `<div class="app-shell"><aside class="sidebar"><a class="brand" href="#overview"><img src="/mark.svg" alt="">Wardroom<small class="brand-credit">by DevX</small></a><div class="workspace-switch">${icon("server")}<div>Development<span>Shared host · Tailnet</span></div><span class="online-dot"></span></div><nav aria-label="Main navigation">${Object.entries(
     names,
   )
     .map(

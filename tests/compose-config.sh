@@ -16,6 +16,7 @@ cat >"$env_file" <<'EOF'
 SHARED_INFRA_BIND_IP=100.100.100.100
 SHARED_INFRA_HOST=100.100.100.100
 DASHBOARD_PASSWORD=test-dashboard-password
+DASHBOARD_SESSION_SECRET=test-session-secret-at-least-32-characters
 TELEMETRY_TOKEN=test-telemetry-token-at-least-32-characters
 RI_ENCRYPTION_KEY=test-redisinsight-encryption-key-32chars
 POSTGRES_ADMIN_USER=postgres

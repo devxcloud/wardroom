@@ -67,7 +67,7 @@
   border-radius: 14px;
   padding: 25px 25px 80px;
   color: white;
-  background: #243755;
+  background: #142934;
   box-shadow: 0 10px 25px #00000013;
   animation: tool-in 0.45s both;
   animation-delay: calc(var(--order) * 70ms);
@@ -77,15 +77,6 @@
     opacity: 0;
     transform: translateY(12px);
   }
-}
-.tool-card.logs {
-  background: linear-gradient(145deg, #1b3153, #294973);
-}
-.tool-card.redis {
-  background: linear-gradient(145deg, #712f39, #a94c50);
-}
-.tool-card.traces {
-  background: linear-gradient(145deg, #164f58, #1c7d79);
 }
 .tool-card-top {
   display: flex;
@@ -136,7 +127,7 @@
 }
 .tool-card small {
   display: block;
-  color: #ffffff7c;
+  color: #b3c6cc;
   margin-top: 9px;
 }
 .tool-launch {
@@ -301,7 +292,7 @@
 }
 .fault-row {
   display: grid;
-  grid-template-columns: 1fr 132px 58px;
+  grid-template-columns: minmax(0, 1fr) 58px;
   gap: 8px;
   align-items: center;
   padding: 9px 0;
@@ -309,6 +300,7 @@
 }
 .fault-row > div {
   min-width: 0;
+  grid-column: 1 / -1;
 }
 .fault-row strong,
 .fault-row code {
@@ -318,8 +310,8 @@
   font-size: 10px;
 }
 .fault-row code {
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
   color: #756b5b;
   margin-top: 3px;
 }
@@ -364,12 +356,5 @@
   .code-strip {
     align-items: flex-start;
     flex-direction: column;
-  }
-  .fault-row {
-    grid-template-columns: 1fr 58px;
-  }
-  .fault-row select {
-    grid-column: 1 / -1;
-    grid-row: 2;
   }
 }

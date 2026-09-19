@@ -28,7 +28,11 @@ const hash = (text) => createHash("sha256").update(text).digest();
 export function createApp(infra, config) {
   if (!config.password || config.password.length < 16)
     throw Error("DASHBOARD_PASSWORD must have at least 16 characters.");
-  const secret = randomBytes(32);
+  if (config.sessionSecret && config.sessionSecret.length < 32)
+    throw Error("DASHBOARD_SESSION_SECRET must have at least 32 characters.");
+  const secret = createHmac("sha256", config.sessionSecret || randomBytes(32))
+    .update(config.password)
+    .digest();
   const attempts = new Map();
   const signature = (value) =>
     createHmac("sha256", secret).update(value).digest("hex");
@@ -127,13 +131,15 @@ export function createApp(infra, config) {
           throw new InputError("Incorrect dashboard password.", 401);
         }
         attempts.delete(ip);
-        const value = `${now + 12 * 60 * 60 * 1000}.${randomBytes(16).toString("hex")}`;
+        const maxAge =
+          data.rememberDevice === true ? 30 * 24 * 60 * 60 : 12 * 60 * 60;
+        const value = `${now + maxAge * 1000}.${randomBytes(16).toString("hex")}`;
         return json(
           res,
           200,
           { ok: true },
           {
-            "Set-Cookie": `infra_session=${value}.${signature(value)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200`,
+            "Set-Cookie": `infra_session=${value}.${signature(value)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}`,
           },
         );
       }

@@ -162,6 +162,7 @@ services:
     environment:
       DASHBOARD_BIND: 0.0.0.0
       DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:?set DASHBOARD_PASSWORD in .env}
+      DASHBOARD_SESSION_SECRET: ${DASHBOARD_SESSION_SECRET:?run scripts/ensure-private-config.mjs first}
       TELEMETRY_TOKEN: ${TELEMETRY_TOKEN:?set TELEMETRY_TOKEN in .env}
       SHARED_INFRA_HOST: ${SHARED_INFRA_HOST:?set SHARED_INFRA_HOST in .env}
       PGHOST: postgres
