@@ -1,0 +1,17 @@
+[Unit]
+Description=Shared infrastructure host telemetry
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/.local/lib/shared-infra-telemetry/collector.py --config %h/.config/shared-infra-telemetry/config.json
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+UMask=0077
+MemoryMax=128M
+CPUQuota=20%
+Environment=PYTHONDONTWRITEBYTECODE=1
+
+[Install]
+WantedBy=default.target

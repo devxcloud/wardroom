@@ -1,0 +1,9 @@
+.env
+projects.local.json
+.git
+node_modules
+backups
+test-results
+playwright-report
+docs
+tests

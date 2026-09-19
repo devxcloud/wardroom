@@ -1,0 +1,20 @@
+[
+  {
+    "name": "postgres",
+    "listen": "0.0.0.0:15434",
+    "upstream": "postgres:5432",
+    "enabled": true
+  },
+  {
+    "name": "redis",
+    "listen": "0.0.0.0:16379",
+    "upstream": "redis:6379",
+    "enabled": true
+  },
+  {
+    "name": "minio",
+    "listen": "0.0.0.0:19100",
+    "upstream": "minio:9000",
+    "enabled": true
+  }
+]

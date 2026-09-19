@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+projects.local.json
+node_modules/
+backups/
+*.dump
+test-results/
+playwright-report/
+.DS_Store
+docs/superpowers/

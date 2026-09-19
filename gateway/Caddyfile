@@ -1,0 +1,58 @@
+:80 {
+    encode zstd gzip
+
+    @api_workbench path /api /api/
+    redir @api_workbench http://{$HOPPSCOTCH_HOST:devbox}:3000/ 302
+
+    @legacy_traces path /traces /traces/*
+    redir @legacy_traces /jaeger/ 308
+
+    @logs path /logs*
+    handle @logs {
+        forward_auth dashboard:8787 {
+            uri /authz
+        }
+        reverse_proxy dozzle:8080 {
+            header_up Remote-User developer
+            header_up Remote-Name Developer
+        }
+    }
+
+    @redis path /redis*
+    handle @redis {
+        forward_auth dashboard:8787 {
+            uri /authz
+        }
+        reverse_proxy redisinsight:5540
+    }
+
+    @jaeger path /jaeger*
+    handle @jaeger {
+        forward_auth dashboard:8787 {
+            uri /authz
+        }
+        reverse_proxy jaeger:16686
+    }
+
+    @mock path /mock*
+    handle @mock {
+        forward_auth dashboard:8787 {
+            uri /authz
+        }
+        handle_path /mock/* {
+            reverse_proxy wiremock:8080
+        }
+    }
+
+    handle {
+        reverse_proxy dashboard:8787
+    }
+}
+
+:3000 {
+    encode zstd gzip
+    forward_auth dashboard:8787 {
+        uri /authz
+    }
+    reverse_proxy hoppscotch:80
+}

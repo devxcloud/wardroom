@@ -1,0 +1,34 @@
+{
+  "name": "wardroom",
+  "private": true,
+  "license": "Apache-2.0",
+  "author": "DevX (https://devx.cloud)",
+  "homepage": "https://github.com/devxcloud/wardroom",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/devxcloud/wardroom.git"
+  },
+  "bugs": {
+    "url": "https://github.com/devxcloud/wardroom/issues"
+  },
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file=.env dashboard/server.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "test:ui": "playwright test"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.1136.0",
+    "@fontsource-variable/jetbrains-mono": "5.3.0",
+    "@fontsource-variable/manrope": "5.3.0",
+    "pg": "8.23.0",
+    "redis": "6.2.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "prettier": "3.9.8"
+  }
+}

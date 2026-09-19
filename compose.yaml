@@ -1,0 +1,371 @@
+name: shared-infra
+
+x-runtime: &runtime
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  gateway:
+    <<: *runtime
+    image: shared-infra-gateway:local
+    build:
+      context: .
+      dockerfile: gateway/Dockerfile
+    mem_limit: 128m
+    read_only: true
+    tmpfs: [/data, /config]
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
+    depends_on:
+      dashboard:
+        condition: service_healthy
+    ports:
+      - "${DASHBOARD_BIND_IP:-0.0.0.0}:80:80"
+      - "${DASHBOARD_BIND_IP:-0.0.0.0}:3000:3000"
+    environment:
+      HOPPSCOTCH_HOST: ${HOPPSCOTCH_HOST:-devbox}
+    healthcheck:
+      test: [CMD, wget, -q, --spider, http://127.0.0.1/healthz]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  postgres:
+    <<: *runtime
+    mem_limit: 2g
+    shm_size: 256m
+    image: pgvector/pgvector:pg18@sha256:2ba9ca5f2e7daa0f0e7723cba1ee9167bab54efd3640516a44ac1a928dd67e7a
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER:?set POSTGRES_ADMIN_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?set POSTGRES_ADMIN_PASSWORD in .env}
+      POSTGRES_DB: postgres
+    ports:
+      - "${SHARED_INFRA_BIND_IP:?set SHARED_INFRA_BIND_IP in .env}:5434:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$$POSTGRES_USER" -d postgres
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  redis:
+    <<: *runtime
+    mem_limit: 512m
+    image: redis:8.0.2-alpine3.21
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - 384mb
+      - --maxmemory-policy
+      - noeviction
+      - --requirepass
+      - ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+    ports:
+      - "${SHARED_INFRA_BIND_IP:?set SHARED_INFRA_BIND_IP in .env}:6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - redis-cli -a "$$REDIS_PASSWORD" ping | grep -q PONG
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  minio:
+    <<: *runtime
+    mem_limit: 2g
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    restart: unless-stopped
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
+    ports:
+      - "${SHARED_INFRA_BIND_IP:?set SHARED_INFRA_BIND_IP in .env}:9100:9000"
+      - "${SHARED_INFRA_BIND_IP:?set SHARED_INFRA_BIND_IP in .env}:9101:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+  minio-init:
+    profiles: [tools]
+    mem_limit: 128m
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
+      TARGET_BUCKET: ${TARGET_BUCKET:-}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        test -n "$$TARGET_BUCKET"
+        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        mc mb --ignore-existing "local/$$TARGET_BUCKET"
+    restart: "no"
+
+  mailpit:
+    <<: *runtime
+    mem_limit: 128m
+    image: axllent/mailpit:v1.27.8
+    restart: unless-stopped
+    ports:
+      - "${SHARED_INFRA_BIND_IP:?set SHARED_INFRA_BIND_IP in .env}:1125:1025"
+      - "${SHARED_INFRA_BIND_IP:?set SHARED_INFRA_BIND_IP in .env}:8125:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
+
+  dashboard:
+    <<: *runtime
+    image: shared-infra-dashboard:local
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    mem_limit: 512m
+    init: true
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DASHBOARD_BIND: 0.0.0.0
+      DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:?set DASHBOARD_PASSWORD in .env}
+      TELEMETRY_TOKEN: ${TELEMETRY_TOKEN:?set TELEMETRY_TOKEN in .env}
+      SHARED_INFRA_HOST: ${SHARED_INFRA_HOST:?set SHARED_INFRA_HOST in .env}
+      PGHOST: postgres
+      PGPORT: "5432"
+      POSTGRES_ADMIN_USER: ${POSTGRES_ADMIN_USER}
+      POSTGRES_ADMIN_PASSWORD: ${POSTGRES_ADMIN_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      MINIO_HOST: minio
+      MINIO_PORT: "9000"
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MAILPIT_URL: http://mailpit:8025
+    ports:
+      - "${DASHBOARD_BIND_IP:-0.0.0.0}:8787:8787"
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:8787/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+  docker-proxy:
+    <<: *runtime
+    image: ghcr.io/tecnativa/docker-socket-proxy:v0.4.2@sha256:1f3a6f303320723d199d2316a3e82b2e2685d86c275d5e3deeaf182573b47476
+    mem_limit: 64m
+    read_only: true
+    tmpfs: [/run, /tmp]
+    security_opt: [no-new-privileges:true]
+    environment:
+      CONTAINERS: "1"
+      EVENTS: "1"
+      INFO: "1"
+      PING: "1"
+      VERSION: "1"
+      POST: "0"
+    volumes:
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+        read_only: true
+    networks: [docker-api]
+    healthcheck:
+      test: [CMD, wget, -q, --spider, http://127.0.0.1:2375/_ping]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  dozzle:
+    <<: *runtime
+    image: amir20/dozzle:v10.6.15@sha256:5bb13e26b62f9bc4bd390e3e0c9423263b7df86e3a4167b718cc6e352f96b54f
+    mem_limit: 256m
+    read_only: true
+    tmpfs: [/tmp, /data]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    depends_on:
+      docker-proxy:
+        condition: service_healthy
+    environment:
+      DOZZLE_REMOTE_HOST: tcp://docker-proxy:2375|Wardroom
+      DOZZLE_BASE: /logs
+      DOZZLE_AUTH_PROVIDER: forward-proxy
+      DOZZLE_ENABLE_ACTIONS: "false"
+      DOZZLE_ENABLE_SHELL: "false"
+    networks: [default, docker-api]
+    healthcheck:
+      test: [CMD, /dozzle, healthcheck]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+  redisinsight:
+    <<: *runtime
+    image: redis/redisinsight:3.8.0@sha256:b5e19ee240abef6edb435871b90ff8a210995422e8e018ab61c0339d318a1f84
+    mem_limit: 512m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      RI_APP_HOST: 0.0.0.0
+      RI_APP_PORT: "5540"
+      RI_PROXY_PATH: /redis
+      RI_ENCRYPTION_KEY: ${RI_ENCRYPTION_KEY:?set RI_ENCRYPTION_KEY in .env}
+      RI_REDIS_HOST: redis
+      RI_REDIS_PORT: "6379"
+      RI_REDIS_ALIAS: Shared Redis
+      RI_REDIS_USERNAME: default
+      RI_REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+      RI_ACCEPT_TERMS_AND_CONDITIONS: "true"
+    volumes:
+      - redisinsight-data:/data
+    healthcheck:
+      test: [CMD, wget, -q, --spider, http://127.0.0.1:5540/redis/api/health/]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  jaeger:
+    <<: *runtime
+    image: shared-infra-jaeger:local
+    build:
+      context: .
+      dockerfile: observability/Dockerfile
+    mem_limit: 512m
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    ports:
+      - "${SHARED_INFRA_BIND_IP:?set SHARED_INFRA_BIND_IP in .env}:4317:4317"
+      - "${SHARED_INFRA_BIND_IP:?set SHARED_INFRA_BIND_IP in .env}:4318:4318"
+    healthcheck:
+      test: [CMD, wget, -q, --spider, http://127.0.0.1:13133/status]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+  hoppscotch:
+    <<: *runtime
+    profiles: [api-tools]
+    image: hoppscotch/hoppscotch:2026.8.1@sha256:e55f3f901e7b18c1a90e6f5b1d283ab45e89049774552553e0451a0ae308ddf2
+    mem_limit: 1g
+    security_opt: [no-new-privileges:true]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://hoppscotch:${HOPPSCOTCH_DB_PASSWORD:-}@postgres:5432/hoppscotch
+      DATA_ENCRYPTION_KEY: ${HOPPSCOTCH_ENCRYPTION_KEY:-}
+      ENABLE_SUBPATH_BASED_ACCESS: "true"
+      VITE_BASE_URL: http://${HOPPSCOTCH_HOST:-devbox}:3000
+      VITE_SHORTCODE_BASE_URL: http://${HOPPSCOTCH_HOST:-devbox}:3000
+      VITE_ADMIN_URL: http://${HOPPSCOTCH_HOST:-devbox}:3000/admin
+      VITE_BACKEND_GQL_URL: http://${HOPPSCOTCH_HOST:-devbox}:3000/backend/graphql
+      VITE_BACKEND_WS_URL: ws://${HOPPSCOTCH_HOST:-devbox}:3000/backend/graphql
+      VITE_BACKEND_API_URL: http://${HOPPSCOTCH_HOST:-devbox}:3000/backend/v1
+      WHITELISTED_ORIGINS: http://${HOPPSCOTCH_HOST:-devbox}:3000
+      # Deliberately unusable: never default private requests to a public relay.
+      # Select Browser or install the local Hoppscotch Agent instead.
+      PROXY_APP_URL: http://127.0.0.1:1
+    healthcheck:
+      test: [CMD, wget, -q, --spider, http://127.0.0.1/backend/ping]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  wiremock:
+    <<: *runtime
+    profiles: [test-lab]
+    image: wiremock/wiremock:3.13.2-2-alpine@sha256:5d1fb808bbe2ac9d249a97cb0fced628c78bc4b8457e9bf62683d1265584e954
+    mem_limit: 256m
+    read_only: true
+    tmpfs: [/tmp, /home/wiremock]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    command: [--global-response-templating, --disable-gzip]
+    healthcheck:
+      test: [CMD, wget, -q, --spider, http://127.0.0.1:8080/__admin/health]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 15s
+
+  toxiproxy:
+    <<: *runtime
+    profiles: [test-lab]
+    image: shared-infra-toxiproxy:local
+    build:
+      context: .
+      dockerfile: lab/Dockerfile
+    mem_limit: 128m
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    ports:
+      - "${SHARED_INFRA_BIND_IP:?set SHARED_INFRA_BIND_IP in .env}:15434:15434"
+      - "${SHARED_INFRA_BIND_IP:?set SHARED_INFRA_BIND_IP in .env}:16379:16379"
+      - "${SHARED_INFRA_BIND_IP:?set SHARED_INFRA_BIND_IP in .env}:19100:19100"
+    healthcheck:
+      test: [CMD, /toxiproxy-cli, -h, 127.0.0.1:8474, list]
+      interval: 5s
+      timeout: 3s
+      retries: 8
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:
+  redisinsight-data:
+
+networks:
+  docker-api:
+    internal: true

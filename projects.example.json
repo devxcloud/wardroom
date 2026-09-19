@@ -1,0 +1,11 @@
+[
+  {
+    "name": "example",
+    "database": "example",
+    "testDatabase": "example_test",
+    "bucket": "example",
+    "testBucket": "example-test",
+    "redisPrefix": "example:",
+    "description": "Example project"
+  }
+]
