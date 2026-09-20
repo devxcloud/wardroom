@@ -1,7 +1,9 @@
 import { mountSystem } from "./system.js";
 import { mountTools } from "./tools.js";
+import { mountAi } from "./ai.js";
 
 let disposeSystem = () => {};
+let disposeAi = () => {};
 const root = document.querySelector("#app");
 const dialog = document.querySelector("#dialog");
 const state = {
@@ -13,8 +15,11 @@ const state = {
   offset: 0,
   query: "",
   sequence: 0,
+  aiSection: "access",
 };
 const paths = {
+  "ai-mcp":
+    "M3 3h6v6H3zm12 12h6v6h-6zM9 6h6a3 3 0 0 1 3 3v6M6 9v6a3 3 0 0 0 3 3h6",
   overview: "M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 0h7v7h-7z",
   database:
     "M20 6c0 2-4 4-8 4S4 8 4 6s4-4 8-4 8 2 8 4Zm0 0v12c0 2-4 4-8 4s-8-2-8-4V6m0 6c0 2 4 4 8 4s8-2 8-4",
@@ -120,6 +125,8 @@ async function api(path, options = {}) {
 }
 function login() {
   disposeSystem();
+  disposeAi();
+  disposeAi = () => {};
   state.sequence++;
   root.innerHTML = `<main class="login"><section class="login-art"><a class="brand" href="/"><img src="/mark.svg" alt="">Wardroom<small class="brand-credit">by DevX</small></a><div><div class="login-network">${icon("server")}<div class="orbit">${icon("database")}${icon("redis")}${icon("storage")}${icon("mail")}</div></div><h1>One home for<br>everything underneath.</h1><p>Your databases, storage and services.<br>Running together. Out of your way.</p></div><span class="login-foot">Shared infrastructure <span>Built for your team</span></span></section><section class="login-form"><div class="login-inner"><span class="lock-tile">${icon("lock")}</span><h2>Your workspace is ready.</h2><p>Sign in to explore and manage your shared infrastructure.</p><form id="login-form"><label for="password">Dashboard password</label><input id="password" name="password" type="password" autocomplete="current-password" required placeholder="Enter your dashboard password"><p class="form-error" role="alert"></p><button class="button primary" type="submit">Open workspace ${icon("arrow")}</button></form><div class="private-note">${icon("globe")} Private workspace on your Tailnet</div></div></section></main>`;
   document
@@ -154,10 +161,12 @@ function login() {
     });
 }
 function shell() {
+  const navView = state.view;
   const names = {
     overview: "Overview",
     system: "System",
     tools: "Tools",
+    "ai-mcp": "AI & MCP",
     database: "PostgreSQL",
     projects: "Projects",
     storage: "Storage",
@@ -168,7 +177,7 @@ function shell() {
   )
     .map(
       ([key, name]) =>
-        `<button data-nav="${key}" class="nav-item ${state.view === key ? "active" : ""}" ${state.view === key ? 'aria-current="page"' : ""}>${icon(key)}<span>${name}</span>${key === "projects" ? `<small>${state.overview?.projects.length ?? 0}</small>` : ""}</button>`,
+        `<button data-nav="${key}" class="nav-item ${navView === key ? "active" : ""}" ${navView === key ? 'aria-current="page"' : ""}>${icon(key)}<span>${name}</span>${key === "projects" ? `<small>${state.overview?.projects.length ?? 0}</small>` : ""}</button>`,
     )
     .join(
       "",
@@ -340,6 +349,8 @@ function bindFilter() {
 async function render() {
   disposeSystem();
   disposeSystem = () => {};
+  disposeAi();
+  disposeAi = () => {};
   const seq = ++state.sequence;
   shell();
   document.querySelector("#main").innerHTML =
@@ -353,7 +364,15 @@ async function render() {
         icon,
         openDialog,
       });
-    else if (state.view === "tools")
+    else if (state.view === "ai-mcp") {
+      const main = document.querySelector("#main");
+      main.innerHTML =
+        '<div class="page-heading"><div><h1>AI &amp; MCP</h1><p>Work with your infrastructure or connect a coding agent.</p></div></div><section class="ai-hub" aria-label="AI and MCP settings"></section>';
+      disposeAi = await mountAi(main.querySelector(".ai-hub"), api, {
+        section: state.aiSection,
+        projects: state.overview.projects,
+      });
+    } else if (state.view === "tools")
       await mountTools({ main: document.querySelector("#main"), api, icon });
     else if (state.view === "database") await database();
     else if (state.view === "projects") await projects();
@@ -570,12 +589,23 @@ dialog.addEventListener("click", (e) => {
 async function boot() {
   try {
     state.overview = await api("overview");
-    const view = location.hash.slice(1);
+    const requestedView = location.hash.slice(1);
+    const [requestedBase, requestedSection] = requestedView.split("/");
+    const legacy = requestedView === "tools/ai-mcp";
+    const view = legacy ? "ai-mcp" : requestedBase;
+    if (view === "ai-mcp")
+      state.aiSection = ["chat", "connection", "access"].includes(
+        requestedSection,
+      )
+        ? requestedSection
+        : "access";
+    if (legacy) history.replaceState(null, "", "#ai-mcp");
     if (
       [
         "overview",
         "system",
         "tools",
+        "ai-mcp",
         "database",
         "projects",
         "storage",

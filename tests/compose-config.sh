@@ -17,6 +17,7 @@ SHARED_INFRA_BIND_IP=100.100.100.100
 SHARED_INFRA_HOST=100.100.100.100
 DASHBOARD_PASSWORD=test-dashboard-password
 DASHBOARD_SESSION_SECRET=test-session-secret-at-least-32-characters
+AI_SETTINGS_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 TELEMETRY_TOKEN=test-telemetry-token-at-least-32-characters
 RI_ENCRYPTION_KEY=test-redisinsight-encryption-key-32chars
 POSTGRES_ADMIN_USER=postgres
@@ -79,3 +80,16 @@ if grep -q '8474:8474' "$lab_file"; then
 fi
 
 echo "compose configuration contract passed"
+
+docker compose --profile agents --profile agent-control --env-file "$env_file" -f compose.yaml config --format json | node --input-type=module -e '
+import assert from "node:assert/strict";
+let raw="";for await(const c of process.stdin) raw+=c;
+const config=JSON.parse(raw);
+assert.equal(config.services.mcp.ports,undefined);
+assert.equal(config.services.mcp.environment.AI_SETTINGS_KEY,undefined);
+assert.equal(config.services.dashboard.environment.AI_SETTINGS_KEY,"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+assert.equal(config.services["agent-broker"].ports,undefined);
+assert.equal(config.services["docker-proxy"].environment.POST,"0");
+assert.equal(config.services["agent-broker"].networks.default,undefined);
+assert.equal(config.networks["agent-control"].internal,true);
+console.log("MCP network isolation contract passed");'

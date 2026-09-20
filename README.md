@@ -153,6 +153,46 @@ Use the Browser interceptor for CORS-enabled APIs, or install the Hoppscotch Age
 
 The `hoppscotch` project uses the existing registry and provisioning rules, including the usual development/test databases and buckets. Only its development database is used by Hoppscotch. Keys remain in ignored `.env`; losing the encryption key can make stored encrypted configuration unreadable. Project collections and exported environments may contain secrets—keep them outside the public repository.
 
+## Built-in infrastructure AI
+
+Open **AI & MCP → Connection** to connect one OpenAI-compatible endpoint and model. Wardroom stores the optional API key encrypted in PostgreSQL with the private `AI_SETTINGS_KEY`; the browser receives only whether a key is saved. HTTPS is recommended. Private HTTP endpoints require explicit acknowledgement, and `localhost` means the dashboard container rather than your workstation.
+
+**Chat** can inspect and change development infrastructure through the same validated, audited tool catalog as MCP. Choose a single project or workspace-admin scope before starting. Destructive access and project SQL are a separate, off-by-default choice that stays fixed for the conversation. Tool activity and exact resource targets remain visible in the transcript. Stop prevents later model/tool calls, but it cannot roll back an operation already dispatched.
+
+Conversation history is temporary, belongs to the signed-in dashboard session, and expires after 30 minutes. Prompts, tool results, records and any credentials deliberately entered into chat go to the configured provider and may be retained or billed according to that provider's policy. Wardroom does not send a request when merely opening the page. **Test connection** sends a minimal prompt without infrastructure context.
+
+The first release supports the streamed Chat Completions tool-call protocol. Compatible gateways and local inference servers vary; the selected model must support tool calls. Codex account/device login, multiple provider profiles, uploads, background jobs and persisted chat history are not included.
+
+## Coding-agent tools (optional MCP)
+
+Wardroom can provision and operate development resources for a coding agent—no built-in chat, model API key, or AI subscription is required. The optional MCP service exposes project provisioning, database/user lifecycle, project SQL, Redis and S3 editing, host metrics, owned mocks, fixed fault presets and restricted container controls.
+
+Open **AI & MCP** in the main menu (direct link: `/#ai-mcp`) to create a project/admin token, select its expiry and destructive permissions, and copy installation commands or configuration for Claude Code, Codex, Grok Build or another MCP client. Save the one-time token privately. The dedicated page lists token scope, expiry and last authenticated use, and lets you revoke access. Inactive tokens are hidden until requested. Token management requires the dashboard login; MCP agents cannot issue tokens.
+
+```sh
+# In private .env, set MCP_ALLOWED_HOSTS to the devbox IP/DNS names
+# you use to connect (comma-separated, no scheme/port).
+make mcp-up
+make agent-token ARGS="--project example --destructive --label coding-agent --output .env.agent-example.json"
+make agent-tokens
+make agent-history
+make agent-revoke ID=<token-id>
+```
+
+The token's project may be new: `project_provision` creates its dev/test databases, user and buckets. Leave out `--destructive` to disable SQL, retirement, namespace clearing, password rotation and other high-impact operations. Use `--admin` instead of `--project` only for an explicitly trusted agent that needs shared-service controls. Tokens expire after 30 days by default (`--days 1` through `--days 90`); revocation is checked on every request. The private JSON file contains the token and must not be committed or pasted into chat.
+
+Connect a manually configured Streamable HTTP MCP client to `http://<devbox-tailnet-ip>/mcp` with an environment-backed bearer token. The official SDK v2 and v1 clients are tested; OAuth discovery and the old standalone SSE transport are not provided. For Codex, load the token from your private file into `WARDROOM_MCP_TOKEN` in the launching environment, then:
+
+```sh
+codex mcp add wardroom --url http://<devbox-tailnet-ip>/mcp --bearer-token-env-var WARDROOM_MCP_TOKEN
+```
+
+MCP uses the same gateway address as the dashboard: `http://devbox/mcp` or `http://<devbox-tailnet-ip>/mcp`. Every request requires a valid agent bearer token; dashboard cookies do not grant access. No client-IP allowlist, tunnel, extra port or domain is required. MCP is reachable wherever the gateway is reachable, subject to its configured Host/Origin checks. Use the Tailnet address for encrypted transport: ordinary LAN HTTP exposes bearer tokens. Do not publicly expose this development gateway.
+
+Mutation tools require a UUID `operationId`. Repeating a completed operation ID with identical arguments returns its safe recorded outcome without repeating the write. An interrupted/uncertain operation requires operator inspection—not an automatic retry with a new ID. Project SQL and table previews use an actual project database login, never the infrastructure admin; supplied passwords, SQL results, logs and object bodies can still enter your AI client's context/history. Do not use real customer data.
+
+See [agent operations](docs/agent-tools.md) for tool boundaries, recovery and test commands. `make mcp-down` stops MCP and the private container broker without deleting resources. Built-in chat uses the same catalog directly; external agents continue to use MCP independently.
+
 ## Everyday commands
 
 ```sh
@@ -174,9 +214,9 @@ This is trusted-team development infrastructure—not an Internet-facing control
 - Data ports bind only to `SHARED_INFRA_BIND_IP` (normally the devbox Tailnet address).
 - The gateway may bind to all local interfaces so the short devbox hostname works on the LAN.
 - Dashboard sessions are `HttpOnly`, `SameSite=Strict`, and expire after 12 hours, or 30 days with **Remember this device**. Only enable this on a device you trust; no password is saved in browser storage. Your browser's password manager can save the password separately.
-- The Compose wrapper generates a private `DASHBOARD_SESSION_SECRET` in `.env` so sessions survive restarts. Changing that key or `DASHBOARD_PASSWORD` invalidates all sessions after redeploying. Sign out clears this browser's cookie; it does not revoke copies of the token. Standalone runs without a signing key invalidate sessions on restart.
+- The Compose wrapper generates private `DASHBOARD_SESSION_SECRET` and `AI_SETTINGS_KEY` values in `.env`. Preserve both across redeploys. Changing the session key or `DASHBOARD_PASSWORD` invalidates dashboard sessions; changing the AI key makes a saved provider credential unreadable until its original key is restored or the connection is removed and saved again.
 - Tool routes reuse dashboard authentication through Caddy `forward_auth`.
-- Database browsing is read-only; there is no arbitrary SQL console or destructive cleanup UI.
+- Browser database browsing remains read-only. Optional MCP allows explicit project-scoped mutations and SQL using project credentials; destructive tools require a destructive-enabled token.
 - Images are versioned, critical additions are digest-pinned, containers use bounded memory, and logs rotate.
 - LAN HTTP is unencrypted. Tailscale encrypts peer traffic. Never expose these ports directly to the public Internet.
 

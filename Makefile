@@ -1,6 +1,26 @@
 DOCKER_COMPOSE = bash scripts/compose.sh
 
 .PHONY: context config up down ps logs provision smoke test doctor backup restore connections telemetry lab-up lab-down api-up api-down
+.PHONY: mcp-up mcp-down agent-token agent-tokens agent-revoke agent-history
+
+mcp-up:
+	node scripts/ensure-private-config.mjs --agents
+	$(DOCKER_COMPOSE) --profile agents --profile agent-control up -d --build --wait --wait-timeout 120 mcp agent-broker dashboard gateway
+
+mcp-down:
+	$(DOCKER_COMPOSE) --profile agents --profile agent-control stop mcp agent-broker
+
+agent-token:
+	node scripts/agent-token.mjs issue $(ARGS)
+
+agent-tokens:
+	node scripts/agent-token.mjs list
+
+agent-revoke:
+	node scripts/agent-token.mjs revoke --id "$(ID)"
+
+agent-history:
+	node scripts/agent-token.mjs history
 
 context:
 	./scripts/setup-context.sh

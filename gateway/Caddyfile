@@ -1,6 +1,11 @@
 :80 {
     encode zstd gzip
 
+    @mcp path /mcp /mcp/*
+    handle @mcp {
+        reverse_proxy mcp:8790
+    }
+
     @api_workbench path /api /api/
     redir @api_workbench http://{$HOPPSCOTCH_HOST:devbox}:3000/ 302
 

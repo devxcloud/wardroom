@@ -318,11 +318,17 @@ export class Infrastructure {
     );
   }
 
-  async rows(database, schema, table, offsetValue) {
+  async rows(
+    database,
+    schema,
+    table,
+    offsetValue,
+    withDatabase = this.withDatabase.bind(this),
+  ) {
     const offset = pageOffset(offsetValue);
     if (typeof schema !== "string" || typeof table !== "string")
       throw new InputError("Select a table.");
-    return this.withDatabase(database, async (c) => {
+    return withDatabase(database, async (c) => {
       const allowed = await c.query(
         `SELECT c.oid FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
         WHERE n.nspname=$1 AND c.relname=$2 AND c.relkind IN ('r','p')
