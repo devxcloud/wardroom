@@ -13,7 +13,7 @@ test("API setup generates private keys once without rotating existing credential
     const run = () =>
       execFileSync(
         process.execPath,
-        ["scripts/ensure-private-config.mjs", "--api"],
+        ["scripts/ensure-private-config.mjs", "--api", "--agents"],
         {
           env: { ...process.env, ENV_FILE: file },
           encoding: "utf8",
@@ -22,6 +22,7 @@ test("API setup generates private keys once without rotating existing credential
     const output = run();
     const first = await readFile(file, "utf8");
     assert.match(first, /^DASHBOARD_SESSION_SECRET=[a-f0-9]{64}$/m);
+    assert.match(first, /^AGENT_BROKER_SECRET=[a-f0-9]{64}$/m);
     assert.match(first, /^HOPPSCOTCH_DB_PASSWORD=[a-f0-9]{64}$/m);
     assert.match(first, /^HOPPSCOTCH_ENCRYPTION_KEY=[a-f0-9]{32}$/m);
     assert.doesNotMatch(output, /[a-f0-9]{32}/);

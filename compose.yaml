@@ -159,7 +159,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    environment:
+    environment: &wardroom-environment
       DASHBOARD_BIND: 0.0.0.0
       DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:?set DASHBOARD_PASSWORD in .env}
       DASHBOARD_SESSION_SECRET: ${DASHBOARD_SESSION_SECRET:?run scripts/ensure-private-config.mjs first}
@@ -190,6 +190,71 @@ services:
       timeout: 5s
       retries: 6
       start_period: 15s
+
+  mcp:
+    <<: *runtime
+    profiles: [agents]
+    image: shared-infra-dashboard:local
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    command: [node, dashboard/agent/main.mjs]
+    mem_limit: 512m
+    init: true
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [default, agent-control]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: *wardroom-environment
+      MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-localhost}
+      AGENT_BROKER_SECRET: ${AGENT_BROKER_SECRET:-}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8790/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  agent-broker:
+    <<: *runtime
+    profiles: [agent-control]
+    image: shared-infra-dashboard:local
+    command: [node, dashboard/agent/broker.mjs]
+    user: "0:0"
+    mem_limit: 128m
+    init: true
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [agent-control]
+    environment:
+      AGENT_BROKER_SECRET: ${AGENT_BROKER_SECRET:-}
+      AGENT_COMPOSE_PROJECT: shared-infra
+    volumes:
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+        read_only: true
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8791/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  agent-check:
+    profiles: [agent-test]
+    image: shared-infra-dashboard:local
+    command: [node, -e, "console.log('Wardroom disposable control test'); setInterval(()=>{}, 60000)"]
+    mem_limit: 64m
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    network_mode: none
 
   docker-proxy:
     <<: *runtime
@@ -368,5 +433,7 @@ volumes:
   redisinsight-data:
 
 networks:
+  agent-control:
+    internal: true
   docker-api:
     internal: true

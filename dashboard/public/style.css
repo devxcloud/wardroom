@@ -1728,7 +1728,8 @@ input[readonly] {
   }
   .sidebar nav {
     display: flex;
-    justify-content: space-around;
+    justify-content: flex-start;
+    overflow-x: auto;
   }
   .nav-item {
     margin: 0;
@@ -1737,6 +1738,7 @@ input[readonly] {
     padding: 7px 8px;
     width: auto;
     min-width: 55px;
+    flex-shrink: 0;
   }
   .nav-item > span {
     display: block;

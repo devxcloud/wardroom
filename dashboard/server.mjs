@@ -11,6 +11,8 @@ import {
 import { Infrastructure } from "./infra.mjs";
 import { configFrom } from "./config.mjs";
 import { InputError, connectionText } from "./domain.mjs";
+import { AgentStore } from "./agent/store.mjs";
+import { tokenInput, operationSchema } from "./agent/policy.mjs";
 
 const publicDir = fileURLToPath(new URL("./public/", import.meta.url));
 const fontDir = fileURLToPath(
@@ -158,6 +160,18 @@ export function createApp(infra, config) {
           );
         if (req.method === "POST" && path === "/api/projects")
           return json(res, 201, await infra.provision(await body(req)));
+        if (path === "/api/agent-tokens" && req.method === "POST")
+          return json(
+            res,
+            201,
+            await infra.agents.issue(tokenInput(await body(req))),
+          );
+        if (path === "/api/agent-tokens/revoke" && req.method === "POST") {
+          const data = await body(req);
+          if (!operationSchema.safeParse(data?.id).success)
+            throw new InputError("Invalid token identifier.");
+          return json(res, 200, await infra.agents.revoke(data.id));
+        }
         if (req.method === "POST" && path === "/api/lab/fault") {
           const data = await body(req);
           return json(
@@ -170,6 +184,20 @@ export function createApp(infra, config) {
           throw new InputError("Method not allowed.", 405);
         if (path === "/api/overview")
           return json(res, 200, await infra.overview());
+        if (path === "/api/agent-tokens")
+          return json(res, 200, await infra.agents.list());
+        if (path === "/api/agent-connection") {
+          let ready = false;
+          try {
+            const check = await fetch("http://mcp:8790/healthz", {
+              signal: AbortSignal.timeout(2000),
+              redirect: "error",
+            });
+            ready = check.ok;
+            await check.body?.cancel();
+          } catch {}
+          return json(res, 200, { url: `http://${config.host}/mcp`, ready });
+        }
         if (path === "/api/system")
           return json(
             res,
@@ -256,6 +284,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
     if (!config.password || config.password.length < 16) throw Error();
     await infra.initialize();
+    infra.agents = new AgentStore(infra.pool, config.sessionSecret);
+    await infra.agents.initialize();
     const server = createApp(infra, config);
     server.requestTimeout = 30_000;
     server.listen(config.port, config.bind, () =>

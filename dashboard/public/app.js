@@ -1,5 +1,6 @@
 import { mountSystem } from "./system.js";
 import { mountTools } from "./tools.js";
+import { mountAgents } from "./agents.js";
 
 let disposeSystem = () => {};
 const root = document.querySelector("#app");
@@ -15,6 +16,8 @@ const state = {
   sequence: 0,
 };
 const paths = {
+  "ai-mcp":
+    "M3 3h6v6H3zm12 12h6v6h-6zM9 6h6a3 3 0 0 1 3 3v6M6 9v6a3 3 0 0 0 3 3h6",
   overview: "M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 0h7v7h-7z",
   database:
     "M20 6c0 2-4 4-8 4S4 8 4 6s4-4 8-4 8 2 8 4Zm0 0v12c0 2-4 4-8 4s-8-2-8-4V6m0 6c0 2 4 4 8 4s8-2 8-4",
@@ -154,10 +157,12 @@ function login() {
     });
 }
 function shell() {
+  const navView = state.view;
   const names = {
     overview: "Overview",
     system: "System",
     tools: "Tools",
+    "ai-mcp": "AI & MCP",
     database: "PostgreSQL",
     projects: "Projects",
     storage: "Storage",
@@ -168,7 +173,7 @@ function shell() {
   )
     .map(
       ([key, name]) =>
-        `<button data-nav="${key}" class="nav-item ${state.view === key ? "active" : ""}" ${state.view === key ? 'aria-current="page"' : ""}>${icon(key)}<span>${name}</span>${key === "projects" ? `<small>${state.overview?.projects.length ?? 0}</small>` : ""}</button>`,
+        `<button data-nav="${key}" class="nav-item ${navView === key ? "active" : ""}" ${navView === key ? 'aria-current="page"' : ""}>${icon(key)}<span>${name}</span>${key === "projects" ? `<small>${state.overview?.projects.length ?? 0}</small>` : ""}</button>`,
     )
     .join(
       "",
@@ -353,7 +358,12 @@ async function render() {
         icon,
         openDialog,
       });
-    else if (state.view === "tools")
+    else if (state.view === "ai-mcp") {
+      const main = document.querySelector("#main");
+      main.innerHTML =
+        '<div class="page-heading"><div><h1>AI &amp; MCP</h1><p>Connect coding agents and manage their infrastructure access.</p></div></div><section class="agent-panel" aria-label="AI and MCP settings"></section>';
+      await mountAgents(main.querySelector(".agent-panel"), api);
+    } else if (state.view === "tools")
       await mountTools({ main: document.querySelector("#main"), api, icon });
     else if (state.view === "database") await database();
     else if (state.view === "projects") await projects();
@@ -570,12 +580,16 @@ dialog.addEventListener("click", (e) => {
 async function boot() {
   try {
     state.overview = await api("overview");
-    const view = location.hash.slice(1);
+    const requestedView = location.hash.slice(1);
+    const view = requestedView === "tools/ai-mcp" ? "ai-mcp" : requestedView;
+    if (requestedView === "tools/ai-mcp")
+      history.replaceState(null, "", "#ai-mcp");
     if (
       [
         "overview",
         "system",
         "tools",
+        "ai-mcp",
         "database",
         "projects",
         "storage",

@@ -106,7 +106,7 @@ Never change the PostgreSQL major version against the existing volume. Major upg
 
 ## Destructive operations
 
-The dashboard cannot delete databases, buckets, roles or shared volumes. There is no destructive Make target. The command below permanently deletes all shared PostgreSQL, Redis, and MinIO data, including the project registry:
+The browser dashboard cannot delete databases, buckets, roles or shared volumes. Optional [agent tools](agent-tools.md) can retire registered project resources with an explicitly destructive token; they cannot delete Docker volumes. The command below permanently deletes all shared PostgreSQL, Redis, and MinIO data, including the project registry:
 
 ```sh
 bash scripts/compose.sh down --volumes
