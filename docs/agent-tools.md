@@ -12,7 +12,7 @@ Claude Code's example uses environment-variable expansion in `.mcp.json` ([offic
 
 MCP is reachable wherever the dashboard gateway is reachable. Keep traffic on an encrypted Tailnet path: ordinary LAN HTTP exposes bearer tokens. Do not publish this trusted-development gateway on the Internet. Token scope, destructive opt-in, expiry and revocation remain enforced regardless of client address.
 
-Issue project tokens through `make agent-token ARGS="--project example --output .env.agent-example.json"`. Add `--destructive` deliberately; use `--admin` instead of `--project` for shared-service operations. Tokens expire in 30 days by default, with a configurable 1–90 day lifetime. Only the token hash is stored. Save the issuance result privately: the raw token cannot be recovered later. Use `make agent-tokens` and `make agent-revoke ID=<uuid>` to inspect and revoke access.
+Issue project tokens through `make agent-token ARGS="--project example --output .env.agent-example.json"`. Add `--destructive` deliberately; use `--admin` instead of `--project` for shared-service operations. Tokens expire in 30 days by default, with a configurable 1–90 day lifetime or no expiration (`--days 0` / **No expiration** in the form). Only the token hash is stored. Save the issuance result privately: the raw token cannot be recovered later. Use `make agent-tokens` and `make agent-revoke ID=<uuid>` to inspect and revoke access.
 
 Project scope is enforced by these tools, not by a separate infrastructure tenant. Developers with shared Redis/MinIO credentials still have shared access. SQL passwords, returned records, application logs and object contents may be retained by your agent client or model provider. Do not use customer data or production secrets.
 
@@ -21,14 +21,17 @@ Project scope is enforced by these tools, not by a separate infrastructure tenan
 | Area        | Supported behavior                                                         | Deliberate limits                                                                                                              |
 | ----------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | Projects    | Provision, inspect, connection templates, retire                           | Registry-owned resources only; system projects protected                                                                       |
-| PostgreSQL  | Extra databases/users, fixed grants, password rotation, table preview, SQL | Actual project login for SQL/previews; bounded output and timeouts; SQL requires destructive opt-in                            |
+| PostgreSQL  | Extra databases/users, CREATEDB on the project owner, grants, SQL          | Actual project login for SQL/previews; bounded output and timeouts; SQL requires destructive opt-in                            |
 | Redis       | Scan/get/set/delete relative keys, clear namespace                         | Project prefix always applied; no arbitrary commands or global flush                                                           |
 | S3          | Owned bucket lifecycle, object list/get/put/delete                         | Bounded pages/bodies; explicit purge; versioned bucket deletion refused                                                        |
-| Diagnostics | Service health and host metrics                                            | Project responses exclude unrestricted container inventory                                                                     |
+| Diagnostics | Service health, host metrics, and LVM volume-group capacity                | Project responses exclude unrestricted container inventory                                                                     |
+| LVM         | List volume groups and grow a logical volume to an absolute size in GiB    | Admin only; grow-only (no shrink); then online ext4/xfs resize. No arbitrary host shell                                        |
 | Test lab    | Project-namespaced static mocks, fixed fault presets                       | No raw WireMock mappings or arbitrary proxy destinations                                                                       |
-| Containers  | List/logs/start/stop/restart                                               | Admin only; fixed service allowlist and Compose-label checks; no shell, exec, image creation, volumes or control-plane actions |
+| Containers  | List/logs/start/stop/restart/remove by service or container name           | Admin only; no shell or exec. Control-plane containers cannot be stopped or deleted; Wardroom services cannot be deleted       |
+| Volumes     | List/create/remove named Docker volumes                                    | Admin only; Wardroom data volumes are protected; in-use volumes cannot be removed                                              |
+| Networks    | List/create/remove Docker networks                                         | Admin only; bridge/host/none and Wardroom compose networks are protected; in-use networks cannot be removed                    |
 
-Normal exact-key/object writes are available without destructive opt-in. Broader operations such as SQL, retirement, namespace clearing, password rotation and container actions require it. The MCP discovery response reflects the caller's permissions; dispatch checks them again.
+Normal exact-key/object writes are available without destructive opt-in. Broader operations such as SQL, retirement, namespace clearing, password rotation, container stop/remove and volume removal require it. The MCP discovery response reflects the caller's permissions; dispatch checks them again. Project owner logins receive CREATEDB so they can create extra test databases; `user_createdb` grants that privilege on existing project roles. Do not send infrastructure admin SQL through `sql_execute`.
 
 ## Mutation recovery
 
@@ -50,6 +53,8 @@ node --env-file=.env --test tests/integration/agent.mjs
 node --env-file=.env --test tests/integration/mcp.mjs
 make mcp-down
 ```
+
+`make mcp-down` stops MCP only. The container broker stays up so the dashboard can manage containers and volumes.
 
 Integration tests write disposable randomly named projects and clean up their exact resources. The MCP test normally exercises the configured gateway path. `MCP_TEST_SSH=1` instead uses the existing remote Docker SSH connection as a test-only transport to the deployed service; it does not prove workstation gateway reachability or install a client tunnel.
 

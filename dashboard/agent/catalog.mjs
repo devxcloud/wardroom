@@ -87,16 +87,21 @@ export function createCatalog(infra, store, { lab } = {}) {
     (a) => resources.retire(a.project),
     { destructive: true },
   );
-  add("database_list", "List owned databases and sizes.", page, async (a) => {
-    const names = (await resources.list(a.project))
-      .filter((r) => r.kind === "database")
-      .map((r) => r.name);
-    return {
-      databases: (await infra.databases()).filter((d) =>
-        names.includes(d.name),
-      ),
-    };
-  });
+  add(
+    "database_list",
+    "List databases owned by this project, including extra test databases the project login created.",
+    page,
+    async (a) => {
+      const names = (await resources.list(a.project))
+        .filter((r) => r.kind === "database")
+        .map((r) => r.name);
+      return {
+        databases: (await infra.databases()).filter(
+          (d) => d.owner === a.project || names.includes(d.name),
+        ),
+      };
+    },
+  );
   add(
     "user_list",
     "List project database users, without passwords.",
@@ -137,13 +142,13 @@ export function createCatalog(infra, store, { lab } = {}) {
   );
   write(
     "database_create",
-    "Create an extra database with the project owner and pgvector.",
+    "Create an extra registered database owned by the project, with pgvector. The project login can also CREATE DATABASE itself after user_createdb.",
     { database: identifier },
     (a) => resources.create(a.project, "database", a.database),
   );
   write(
     "database_drop",
-    "Drop an extra registered database; refuses active connections and base databases.",
+    "Drop an extra database owned by the project, registered or created by the project login. Refuses active connections and base databases.",
     { database: identifier },
     (a) => resources.drop(a.project, "database", a.database),
     { destructive: true },
@@ -170,6 +175,12 @@ export function createCatalog(infra, store, { lab } = {}) {
       profile: z.enum(["read", "write"]),
     },
     (a) => resources.grant(a),
+  );
+  write(
+    "user_createdb",
+    "Grant CREATEDB to the project owner login so it can create extra test databases. Does not grant superuser or CREATEROLE. Do not ask for admin SQL passwords.",
+    {},
+    (a) => resources.grantCreatedb(a.project),
   );
   write(
     "user_password_rotate",
@@ -285,7 +296,7 @@ export function createCatalog(infra, store, { lab } = {}) {
   );
   add(
     "system_metrics",
-    "Aggregate host utilization with freshness; project callers do not receive other containers' metadata.",
+    "Host CPU, memory, mounted filesystems, LVM volume groups, I/O and network, with freshness. storage[].availableBytes is filesystem free on a mounted volume; lvm.volumeGroups[].freeBytes is unallocated LVM space and is usually much larger. Project callers do not receive other containers' metadata.",
     { range: z.enum(["15m", "1h", "24h"]).default("15m") },
     async (a, actor) => {
       const result = structuredClone(await infra.telemetry.read(a.range));
@@ -299,6 +310,7 @@ export function createCatalog(infra, store, { lab } = {}) {
           cpu: latest?.cpu,
           memory: latest?.memory,
           storage: latest?.storage,
+          lvm: latest?.lvm,
           io: latest?.io,
           network: latest?.network,
           history: result.history,
@@ -316,16 +328,17 @@ export function createCatalog(infra, store, { lab } = {}) {
   if (lab) {
     add(
       "container_list",
-      "Inspect Wardroom-managed containers, without environment secrets.",
+      "List containers on the host, without environment secrets. class=control cannot be stopped; class=wardroom cannot be deleted.",
       {},
       () => lab.containers("list"),
       { admin: true },
     );
     add(
       "container_logs",
-      "Read a bounded tail of a managed service's logs; output may contain application secrets.",
+      "Read a bounded tail of a container's logs; output may contain application secrets. Pass service for a Wardroom Compose service or name for any container.",
       {
-        service: z.string().min(1).max(48),
+        service: z.string().min(1).max(64).optional(),
+        name: z.string().min(1).max(128).optional(),
         lines: z.number().int().min(1).max(200).default(100),
       },
       (a) => lab.containers("logs", a),
@@ -333,13 +346,95 @@ export function createCatalog(infra, store, { lab } = {}) {
     );
     add(
       "container_action",
-      "Start, stop or restart one allowed managed service. No shell, exec, create or volume operations.",
+      "Start, stop, restart, or remove a container by Compose service or container name. Control-plane containers cannot be stopped or removed. Wardroom service containers cannot be deleted. No shell or exec.",
       {
         operationId: operationSchema,
-        service: z.string().min(1).max(48),
-        action: z.enum(["start", "stop", "restart"]),
+        service: z.string().min(1).max(64).optional(),
+        name: z.string().min(1).max(128).optional(),
+        action: z.enum(["start", "stop", "restart", "remove"]),
       },
       (a) => lab.containers(a.action, a),
+      { admin: true, destructive: true, mutation: true },
+    );
+    add(
+      "volume_list",
+      "List Docker volumes on the host, including disk usage when available. Wardroom data volumes are marked protected.",
+      {},
+      () => lab.containers("volume_list"),
+      { admin: true },
+    );
+    add(
+      "volume_create",
+      "Create a named Docker volume. Does not attach it to a container.",
+      {
+        operationId: operationSchema,
+        name: z
+          .string()
+          .regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$/),
+      },
+      (a) => lab.containers("volume_create", a),
+      { admin: true, mutation: true },
+    );
+    add(
+      "lvm_list",
+      "List host LVM volume groups and logical volumes with unallocated VG space. Filesystem free on a mount is not VG free. Use lvm_extend to grow a logical volume.",
+      {},
+      () => lab.host("list"),
+      { admin: true },
+    );
+    add(
+      "lvm_extend",
+      "Grow a host LVM logical volume to an absolute sizeGiB (GiB, 1024^3) and expand its ext4/xfs filesystem. Never shrinks. Example: vg=ubuntu-vg lv=ubuntu-lv sizeGiB=200. Requires unallocated VG space from lvm_list.",
+      {
+        operationId: operationSchema,
+        vg: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9+_.-]{0,126}$/),
+        lv: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9+_.-]{0,126}$/),
+        sizeGiB: z.number().int().min(1).max(65536),
+      },
+      (a) => lab.host("extend", a),
+      { admin: true, destructive: true, mutation: true },
+    );
+    add(
+      "volume_remove",
+      "Remove an unused Docker volume. Refuses Wardroom data volumes and volumes still mounted by a container.",
+      {
+        operationId: operationSchema,
+        name: z
+          .string()
+          .regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$/),
+      },
+      (a) => lab.containers("volume_remove", a),
+      { admin: true, destructive: true, mutation: true },
+    );
+    add(
+      "network_list",
+      "List Docker networks on the host. Built-in and Wardroom compose networks are marked protected.",
+      {},
+      () => lab.containers("network_list"),
+      { admin: true },
+    );
+    add(
+      "network_create",
+      "Create a user bridge network. Does not attach containers.",
+      {
+        operationId: operationSchema,
+        name: z
+          .string()
+          .regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$/),
+      },
+      (a) => lab.containers("network_create", a),
+      { admin: true, mutation: true },
+    );
+    add(
+      "network_remove",
+      "Remove an unused Docker network. Refuses bridge/host/none and Wardroom compose networks.",
+      {
+        operationId: operationSchema,
+        name: z
+          .string()
+          .regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$/),
+      },
+      (a) => lab.containers("network_remove", a),
       { admin: true, destructive: true, mutation: true },
     );
     add(
@@ -427,6 +522,11 @@ export function createCatalog(infra, store, { lab } = {}) {
               "service",
               "target",
               "id",
+              "name",
+              "action",
+              "vg",
+              "lv",
+              "sizeGiB",
             ]
               .filter((k) => a[k] !== undefined)
               .map((k) => [k, a[k]]),

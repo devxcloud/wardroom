@@ -21,6 +21,15 @@ test("live host metrics, chart controls, and container inspection", async ({
   await expect(page.locator(".resource-gauge")).toHaveCount(3);
   await expect(page.locator(".time-chart")).toHaveCount(4);
   await expect(page.locator("#system-live-state")).toContainText("Live");
+  await expect(
+    page.getByRole("heading", { name: "LVM volume groups" }),
+  ).toBeVisible();
+  await expect(page.locator("#system-lvm")).toContainText("unallocated");
+  await expect(page.getByRole("button", { name: "Grow" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Containers" })).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Docker volumes" }),
+  ).toHaveCount(0);
   await page.screenshot({
     path: "test-results/system-desktop.png",
     fullPage: true,
@@ -35,11 +44,6 @@ test("live host metrics, chart controls, and container inspection", async ({
   await expect(page.locator('[data-tooltip="cpu"]')).toBeVisible();
   await page.getByRole("button", { name: "Pause", exact: true }).click();
   await expect(page.getByRole("button", { name: "Resume live" })).toBeVisible();
-  await page.getByLabel("Find a container").fill("shared-infra-gateway");
-  await expect(page.locator(".container-table tbody tr")).toHaveCount(1);
-  await page.locator("[data-container]").click();
-  await expect(page.locator("dialog")).toContainText("shared-infra-gateway");
-  await page.keyboard.press("Escape");
   expect(errors).toEqual([]);
 });
 

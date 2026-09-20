@@ -46,11 +46,16 @@ test("token input is strict, bounded, and excludes control-plane projects", () =
     assert.throws(() => projectName(project));
   for (const input of [
     { label: "x", scope: "admin", project: "alpha" },
-    { label: "x", project: "alpha", days: 0 },
+    { label: "x", project: "alpha", days: -1 },
+    { label: "x", project: "alpha", days: 91 },
     { label: "x", project: "alpha", destructive: "true" },
     { label: "x", project: "alpha", root: true },
   ])
     assert.throws(() => tokenInput(input));
+  assert.equal(
+    tokenInput({ label: "durable", project: "alpha", days: 0 }).days,
+    0,
+  );
 });
 test("operation fingerprints are canonical and sensitive arguments are never exposed in errors", () => {
   assert.equal(

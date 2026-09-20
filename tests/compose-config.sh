@@ -18,6 +18,7 @@ SHARED_INFRA_HOST=100.100.100.100
 DASHBOARD_PASSWORD=test-dashboard-password
 DASHBOARD_SESSION_SECRET=test-session-secret-at-least-32-characters
 AI_SETTINGS_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+AGENT_BROKER_SECRET=test-agent-broker-secret-at-least-32-chars-xx
 TELEMETRY_TOKEN=test-telemetry-token-at-least-32-characters
 RI_ENCRYPTION_KEY=test-redisinsight-encryption-key-32chars
 POSTGRES_ADMIN_USER=postgres
@@ -60,8 +61,8 @@ fi
 [[ $(grep -c 'host_ip: 0.0.0.0' "$rendered_file") -eq 3 ]]
 
 bind_mount_count=$(grep -c 'type: bind' "$rendered_file")
-if [[ "$bind_mount_count" -ne 1 ]] || ! grep -q 'source: /var/run/docker.sock' "$rendered_file"; then
-  echo "only the Docker socket proxy may have a host bind mount" >&2
+if [[ "$bind_mount_count" -ne 2 ]] || ! grep -q 'source: /var/run/docker.sock' "$rendered_file"; then
+  echo "only the Docker socket proxy and container broker may have a host bind mount" >&2
   exit 1
 fi
 grep -q 'POST: "0"' "$rendered_file"
@@ -81,15 +82,23 @@ fi
 
 echo "compose configuration contract passed"
 
-docker compose --profile agents --profile agent-control --env-file "$env_file" -f compose.yaml config --format json | node --input-type=module -e '
+docker compose --profile agents --env-file "$env_file" -f compose.yaml config --format json | node --input-type=module -e '
 import assert from "node:assert/strict";
 let raw="";for await(const c of process.stdin) raw+=c;
 const config=JSON.parse(raw);
 assert.equal(config.services.mcp.ports,undefined);
 assert.equal(config.services.mcp.environment.AI_SETTINGS_KEY,undefined);
 assert.equal(config.services.dashboard.environment.AI_SETTINGS_KEY,"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+assert.ok(config.services.dashboard.environment.AGENT_BROKER_SECRET);
+assert.ok("agent-control" in config.services.dashboard.networks);
 assert.equal(config.services["agent-broker"].ports,undefined);
 assert.equal(config.services["docker-proxy"].environment.POST,"0");
 assert.equal(config.services["agent-broker"].networks.default,undefined);
+assert.ok("agent-control" in config.services["agent-broker"].networks);
+assert.equal(config.services["host-broker"].ports,undefined);
+assert.equal(config.services["host-broker"].privileged,true);
+assert.equal(config.services["host-broker"].pid,"host");
+assert.equal(config.services["host-broker"].networks.default,undefined);
+assert.ok("agent-control" in config.services["host-broker"].networks);
 assert.equal(config.networks["agent-control"].internal,true);
 console.log("MCP network isolation contract passed");'

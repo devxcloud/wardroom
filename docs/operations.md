@@ -46,7 +46,9 @@ Samples arrive every 10 seconds; after 35 seconds without a sample the UI marks 
 
 - Host CPU is normalized across all cores; Docker CPU uses 100% per core.
 - Memory uses Linux `MemAvailable`, accounting for reclaimable cache. Docker reports its own cache-adjusted memory.
-- Filesystem capacity separates used, reserved, and available space.
+- Filesystem capacity separates used, reserved, and available space. That is free space inside a mounted filesystem, not unallocated LVM capacity.
+- LVM volume groups, physical volumes, and logical volumes are collected from sysfs. Volume-group free is physical-volume size minus logical-volume size, so a few megabytes of metadata may be counted as free.
+- Growing a logical volume is an allowlisted host operation (`lvextend` then `resize2fs`/`xfs_growfs`) through the private host broker. It never shrinks. Use the System page Grow control, chat `lvm_extend`, or MCP. `sizeGiB` is the new absolute size in GiB.
 - Disk I/O sums physical devices, excluding device-mapper duplicates.
 - Network charts use the default-route interface. Tailnet traffic is listed separately to avoid double-counting encapsulated traffic.
 - Container network and block-I/O columns are cumulative counters, not rates. Inventory includes other stacks, capped at 128 entries with truncation indicated.
@@ -110,7 +112,7 @@ Never change the PostgreSQL major version against the existing volume. Major upg
 
 ## Destructive operations
 
-The browser dashboard cannot delete databases, buckets, roles or shared volumes. Optional [agent tools](agent-tools.md) can retire registered project resources with an explicitly destructive token; they cannot delete Docker volumes. The command below permanently deletes all shared PostgreSQL, Redis, and MinIO data, including the project registry:
+The browser dashboard cannot drop databases, buckets or roles. The Containers page can start, stop and delete non-control-plane containers, unused Docker volumes, and unused user networks through the private broker. Built-in networks (`bridge`, `host`, `none`) and Wardroom Compose networks stay protected. Optional [agent tools](agent-tools.md) can retire registered project resources with an explicitly destructive token. Wardroom named volumes stay protected. The command below permanently deletes all shared PostgreSQL, Redis, and MinIO data, including the project registry:
 
 ```sh
 bash scripts/compose.sh down --volumes

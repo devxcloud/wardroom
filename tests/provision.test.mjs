@@ -47,6 +47,7 @@ test("provisions both databases and buckets without changing ownership", async (
   assert.ok(calls.includes("bucket sample-test"));
   assert.ok(calls.includes("database sample_test"));
   assert.equal(calls.filter((x) => x.startsWith("CREATE ROLE")).length, 1);
+  assert.ok(calls.some((x) => /CREATE ROLE .* CREATEDB/.test(x)));
   assert.ok(!calls.some((x) => /ALTER ROLE|ALTER DATABASE/.test(x)));
   assert.ok(calls.some((x) => x.includes("pg_advisory_unlock")));
   assert.equal(calls.at(-1), "release");

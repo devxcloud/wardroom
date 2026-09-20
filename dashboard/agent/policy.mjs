@@ -23,7 +23,7 @@ export function tokenInput(input) {
       scope: z.enum(["project", "admin"]).default("project"),
       project: nameSchema.optional(),
       destructive: z.boolean().default(false),
-      days: z.number().int().min(1).max(90).default(30),
+      days: z.number().int().min(0).max(90).default(30),
     })
     .strict()
     .safeParse(input);

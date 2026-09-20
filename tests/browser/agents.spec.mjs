@@ -48,6 +48,9 @@ test("Tools issues a scoped token once, provides client setup and revokes access
   try {
     await panel.getByLabel("Token label").fill(label);
     await panel.getByLabel("Project name").fill("browser_agent");
+    await expect(panel.getByLabel("Expires after")).toContainText(
+      "No expiration",
+    );
     await expect(
       panel.getByLabel("Allow destructive operations"),
     ).not.toBeChecked();

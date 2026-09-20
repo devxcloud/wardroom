@@ -95,6 +95,10 @@ test("project metrics include actual aggregate sample without container identiti
           sample: {
             collectedAt: "now",
             cpu: { percent: 25 },
+            lvm: {
+              available: true,
+              volumeGroups: [{ name: "ubuntu-vg", freeBytes: 850 }],
+            },
             docker: { items: [{ name: "other_project" }] },
           },
           stale: false,
@@ -110,5 +114,6 @@ test("project metrics include actual aggregate sample without container identiti
     {},
   );
   assert.equal(result.cpu.percent, 25);
+  assert.equal(result.lvm.volumeGroups[0].freeBytes, 850);
   assert.doesNotMatch(JSON.stringify(result), /other_project/);
 });

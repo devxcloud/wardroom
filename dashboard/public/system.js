@@ -126,7 +126,7 @@ export function chartMarkup(key, data) {
   return `<div class="monitor-chart-heading"><div><h2>${c.title}</h2><p>${key === "network" ? `${escape(data.sample?.network.primary || "No default route")} · excludes duplicate Tailnet traffic` : c.subtitle}</p></div><div class="chart-legend">${c.keys.map((k, i) => `<span><i class="legend-dot series-${i}"></i>${c.labels[i]} <strong>${c.unit(last?.[k])}</strong></span>`).join("")}</div></div><div class="chart-body"><svg class="time-chart" data-chart="${key}" viewBox="0 0 568 195" tabindex="0" role="img" aria-label="${c.title} over ${data.range}. Use left and right arrows to inspect samples.">${content}</svg><div class="chart-tooltip" data-tooltip="${key}" hidden></div></div>${!history.some((p) => c.keys.some((k) => finite(p[k]))) ? '<p class="chart-warming">Waiting for a second sample to calculate rates.</p>' : ""}`;
 }
 
-export function mountSystem({ main, api, icon, openDialog }) {
+export function mountSystem({ main, api, icon, openDialog, toast = () => {} }) {
   let disposed = false,
     timer,
     pending = false,
@@ -134,10 +134,6 @@ export function mountSystem({ main, api, icon, openDialog }) {
     range = "15m",
     data = null,
     error = null;
-  let filter = "",
-    containerState = "all",
-    sortKey = "cpuPercent",
-    sortDirection = -1;
   const controller = new AbortController();
   const events = { signal: controller.signal };
   main.innerHTML = `<div class="page-heading system-heading"><div><h1>Inside your devbox.</h1><p id="system-host-description">A live view of the machine behind your projects.</p></div><div class="system-controls"><div class="range-picker" role="group" aria-label="Chart time range">${["15m", "1h", "24h"].map((r) => `<button data-range="${r}" aria-pressed="${r === range}">${r}</button>`).join("")}</div><button class="button" data-monitor="pause" aria-pressed="false">${icon("clock")} Pause</button></div></div><div class="system-meta"><span id="system-live-state" class="sample-state">Connecting to collector…</span><span id="system-host-meta"></span></div><div id="system-warning" role="status" hidden></div><div id="system-content"><div class="loading"><span class="spinner"></span> Reading host telemetry…</div></div>`;
@@ -153,24 +149,7 @@ export function mountSystem({ main, api, icon, openDialog }) {
         )
         .join(
           "",
-        )}</div><div class="system-detail-grid"><section class="panel"><div class="panel-heading"><div><h2>Across the cores</h2><p id="core-caption"></p></div><span class="monitor-symbol">${icon("server")}</span></div><div id="system-cores" class="core-grid"></div><div id="system-load" class="detail-foot"></div></section><section class="panel"><div class="panel-heading"><div><h2>Filesystem capacity</h2><p>Mounted disks · used, reserved, available</p></div>${icon("storage")}</div><div id="system-disks" class="filesystem-list"></div></section></div><section class="panel interface-panel"><div class="panel-heading"><div><h2>Network interfaces</h2><p>Physical and Tailnet traffic shown separately</p></div>${icon("globe")}</div><div class="table-wrap"><table><thead><tr><th>Interface</th><th>Receive / s</th><th>Transmit / s</th><th>Total received</th><th>Total sent</th></tr></thead><tbody id="system-interfaces"></tbody></table></div></section><section class="panel container-panel"><div class="panel-heading"><div><h2>Containers <span id="container-count" class="count"></span></h2><p>Everything on your devbox, including other stacks</p></div><div class="container-controls"><label class="search">${icon("search")}<input id="filter" type="search" aria-label="Find a container" placeholder="Find a container"><kbd>/</kbd></label><select id="container-state" aria-label="Filter container state"><option value="all">All states</option><option value="running">Running</option><option value="stopped">Not running</option></select></div></div><div class="table-wrap"><table class="container-table"><thead><tr>${[
-        ["name", "Container"],
-        ["state", "State"],
-        ["cpuPercent", "CPU"],
-        ["memoryBytes", "Memory"],
-        ["networkRxBytes", "Network I/O"],
-        ["readBytes", "Block I/O"],
-        ["pids", "PIDs"],
-      ]
-        .map(
-          ([k, label]) =>
-            `<th data-sort-heading="${k}"><button data-sort="${k}">${label}<span aria-hidden="true"></span></button></th>`,
-        )
-        .join(
-          "",
-        )}</tr></thead><tbody id="container-rows"></tbody></table></div><div id="container-empty" class="filter-empty" hidden></div><div class="detail-foot container-foot"><span>CPU: 100% = one logical core. Memory excludes cache.</span><span>Network & block I/O are cumulative totals.</span></div></section>`;
-    main.querySelector("#filter").value = filter;
-    main.querySelector("#container-state").value = containerState;
+        )}</div><div class="system-detail-grid"><section class="panel"><div class="panel-heading"><div><h2>Across the cores</h2><p id="core-caption"></p></div><span class="monitor-symbol">${icon("server")}</span></div><div id="system-cores" class="core-grid"></div><div id="system-load" class="detail-foot"></div></section><section class="panel"><div class="panel-heading"><div><h2>Filesystem capacity</h2><p>Mounted filesystems · not volume-group free space</p></div>${icon("storage")}</div><div id="system-disks" class="filesystem-list"></div></section></div><section class="panel lvm-panel" id="system-lvm-panel" hidden><div class="panel-heading"><div><h2>LVM volume groups</h2><p>Unallocated extents · separate from filesystem free space</p></div>${icon("storage")}</div><div id="system-lvm" class="filesystem-list"></div></section><section class="panel interface-panel"><div class="panel-heading"><div><h2>Network interfaces</h2><p>Physical and Tailnet traffic shown separately</p></div>${icon("globe")}</div><div class="table-wrap"><table><thead><tr><th>Interface</th><th>Receive / s</th><th>Transmit / s</th><th>Total received</th><th>Total sent</th></tr></thead><tbody id="system-interfaces"></tbody></table></div></section>`;
   }
 
   function status() {
@@ -192,69 +171,6 @@ export function mountSystem({ main, api, icon, openDialog }) {
     warning.textContent =
       error ||
       "The collector has not reported in over 35 seconds. Last known values are shown; check the telemetry service on your devbox.";
-  }
-
-  function containers() {
-    const d = data.sample.docker,
-      body = main.querySelector("#container-rows");
-    const items = d.items
-      .filter(
-        (c) =>
-          `${c.name} ${c.image}`.toLowerCase().includes(filter.toLowerCase()) &&
-          (containerState === "all" ||
-            (containerState === "running"
-              ? c.state === "running"
-              : c.state !== "running")),
-      )
-      .sort((a, b) => {
-        if (a[sortKey] === null) return b[sortKey] === null ? 0 : 1;
-        if (b[sortKey] === null) return -1;
-        return (
-          sortDirection *
-          (typeof a[sortKey] === "string"
-            ? a[sortKey].localeCompare(b[sortKey])
-            : a[sortKey] - b[sortKey])
-        );
-      });
-    const running = d.items.filter((c) => c.state === "running").length;
-    main.querySelector("#container-count").textContent = d.available
-      ? `${running} running / ${d.items.length} total`
-      : "Unavailable";
-    body.innerHTML = items
-      .map(
-        (c) =>
-          `<tr><td><button class="container-name" data-container="${escape(c.id)}">${icon("server")}<strong>${escape(c.name)}</strong></button><small title="${escape(c.image)}">${escape(c.image)}</small></td><td><span class="container-state ${c.state === "running" ? "running" : ""}"><i></i>${escape(c.state)}</span><small>${escape(c.status)}</small></td><td><span class="resource-number">${percent(c.cpuPercent)}</span>${meter(finite(c.cpuPercent) ? c.cpuPercent / data.sample.host.cores : null, "cpu-meter")}</td><td><span class="resource-number">${size(c.memoryBytes)}</span>${meter(c.memoryLimitBytes ? (c.memoryBytes / c.memoryLimitBytes) * 100 : null)}<small>of ${size(c.memoryLimitBytes)}</small></td><td><span class="io-number">↓ ${size(c.networkRxBytes)}</span><small>↑ ${size(c.networkTxBytes)}</small></td><td><span class="io-number">R ${size(c.readBytes)}</span><small>W ${size(c.writeBytes)}</small></td><td class="numeric">${c.pids ?? "—"}</td></tr>`,
-      )
-      .join("");
-    const empty = main.querySelector("#container-empty");
-    empty.hidden = items.length > 0;
-    empty.textContent = !d.available
-      ? "Docker inventory is unavailable. Host metrics are still being collected."
-      : filter || containerState !== "all"
-        ? "No containers match these filters."
-        : "No containers on this host.";
-    main.querySelectorAll("[data-sort-heading]").forEach((th) => {
-      const active = th.dataset.sortHeading === sortKey;
-      th.setAttribute(
-        "aria-sort",
-        active ? (sortDirection === 1 ? "ascending" : "descending") : "none",
-      );
-      th.querySelector("span").textContent = active
-        ? sortDirection === 1
-          ? " ↑"
-          : " ↓"
-        : "";
-    });
-    if (d.available && !d.statsAvailable) {
-      empty.hidden = false;
-      empty.textContent =
-        "Docker inventory is available, but resource statistics could not be collected. Missing values are shown as —.";
-    }
-    if (d.truncated) {
-      empty.hidden = false;
-      empty.textContent =
-        "Showing the first 128 containers; running containers are prioritized.";
-    }
   }
 
   function render() {
@@ -322,13 +238,37 @@ export function mountSystem({ main, api, icon, openDialog }) {
         )
         .join("") ||
       '<p class="padded subtle">No supported mounted filesystems reported.</p>';
+    const groups = s.lvm?.available ? s.lvm.volumeGroups : [];
+    const lvmPanel = main.querySelector("#system-lvm-panel");
+    lvmPanel.hidden = !groups.length;
+    main.querySelector("#system-lvm").innerHTML = groups
+      .map((g) => {
+        const allocated = g.sizeBytes
+          ? Math.max(0, Math.min(100, (100 * g.allocatedBytes) / g.sizeBytes))
+          : 0;
+        const pvs = (s.lvm.physicalVolumes || [])
+          .filter((p) => p.vg === g.name)
+          .map((p) => p.name)
+          .join(", ");
+        const lvs = (s.lvm.logicalVolumes || []).filter((l) => l.vg === g.name);
+        return `<div class="filesystem-row"><div><strong>${escape(g.name)}</strong><span>${size(g.freeBytes)} unallocated</span></div><svg class="filesystem-meter" viewBox="0 0 100 8" preserveAspectRatio="none" role="img" aria-label="${escape(g.name)} ${percent(allocated)} allocated"><rect width="100" height="8" rx="4" class="meter-track"/><rect width="${allocated}" height="8" rx="4" class="meter-fill ${allocated > 85 ? "warning" : ""}"/></svg><div><small>${g.pvCount} PV${g.pvCount === 1 ? "" : "s"}${pvs ? ` · ${escape(pvs)}` : ""} · ${g.lvCount} LV${g.lvCount === 1 ? "" : "s"}</small><small>${size(g.allocatedBytes)} allocated / ${size(g.sizeBytes)}</small></div>${
+          lvs.length
+            ? `<ul class="lvm-lvs">${lvs
+                .map(
+                  (l) =>
+                    `<li><span>${escape(l.name)}</span><small>${escape(l.device)}</small><strong>${size(l.sizeBytes)}</strong><form class="lvm-grow" data-vg="${escape(g.name)}" data-lv="${escape(l.name)}"><label class="visually-hidden" for="lvm-${escape(g.name)}-${escape(l.name)}">New size in GiB</label><input id="lvm-${escape(g.name)}-${escape(l.name)}" name="sizeGiB" type="number" min="${Math.ceil(l.sizeBytes / 1024 ** 3) + 1}" step="1" required placeholder="GiB"><button class="button small" type="submit">Grow</button></form></li>`,
+                )
+                .join("")}</ul>`
+            : ""
+        }</div>`;
+      })
+      .join("");
     main.querySelector("#system-interfaces").innerHTML = s.network.interfaces
       .map(
         (i) =>
           `<tr><td><strong>${escape(i.name)}</strong> ${i.name === s.network.primary ? '<span class="mini-tag">primary</span>' : ""}</td><td class="numeric">${speed(i.rxBytesPerSecond)}</td><td class="numeric">${speed(i.txBytesPerSecond)}</td><td class="numeric">${size(i.rxBytes)}</td><td class="numeric">${size(i.txBytes)}</td></tr>`,
       )
       .join("");
-    containers();
   }
 
   async function refresh() {
@@ -398,63 +338,31 @@ export function mountSystem({ main, api, icon, openDialog }) {
         paused = false;
         refresh();
       }
-      if (button.dataset.sort) {
-        sortDirection =
-          sortKey === button.dataset.sort
-            ? -sortDirection
-            : ["name", "state"].includes(button.dataset.sort)
-              ? 1
-              : -1;
-        sortKey = button.dataset.sort;
-        containers();
-      }
-      if (button.dataset.container) {
-        const c = data.sample.docker.items.find(
-          (c) => c.id === button.dataset.container,
-        );
-        if (!c) return;
-        openDialog(
-          `<div class="dialog-heading"><div><h2>${escape(c.name)}</h2><p>${escape(c.status)}</p></div><button class="icon-button" data-action="close" aria-label="Close">${icon("close")}</button></div><div class="dialog-body container-details"><dl>${[
-            ["Image", c.image],
-            ["Container ID", c.id],
-            ["Published ports", c.ports || "No published ports"],
-            ["CPU", `${percent(c.cpuPercent)} (100% = one core)`],
-            ["Memory", `${size(c.memoryBytes)} / ${size(c.memoryLimitBytes)}`],
-            [
-              "Received / sent",
-              `${size(c.networkRxBytes)} / ${size(c.networkTxBytes)}`,
-            ],
-            [
-              "Block read / write",
-              `${size(c.readBytes)} / ${size(c.writeBytes)}`,
-            ],
-            ["Processes / threads", c.pids ?? "—"],
-          ]
-            .map(([k, v]) => `<dt>${k}</dt><dd>${escape(v)}</dd>`)
-            .join(
-              "",
-            )}</dl><p class="subtle">Snapshot from ${new Date(data.receivedAt).toLocaleTimeString()}. Container controls remain in the CLI.</p></div><div class="dialog-footer"><button class="button" data-action="close">Done</button></div>`,
-        );
-      }
     },
     events,
   );
   main.addEventListener(
-    "input",
-    (e) => {
-      if (e.target.id === "filter") {
-        filter = e.target.value;
-        containers();
-      }
-    },
-    events,
-  );
-  main.addEventListener(
-    "change",
-    (e) => {
-      if (e.target.id === "container-state") {
-        containerState = e.target.value;
-        containers();
+    "submit",
+    async (e) => {
+      if (!e.target.classList.contains("lvm-grow")) return;
+      e.preventDefault();
+      const vg = e.target.dataset.vg;
+      const lv = e.target.dataset.lv;
+      const sizeGiB = Number(e.target.elements.sizeGiB.value);
+      if (!vg || !lv || !Number.isInteger(sizeGiB)) return;
+      if (!confirm(`Grow ${lv} to ${sizeGiB} GiB? This cannot shrink.`)) return;
+      const button = e.target.querySelector("button");
+      button.disabled = true;
+      try {
+        await api("lvm/extend", {
+          method: "POST",
+          body: JSON.stringify({ vg, lv, sizeGiB }),
+        });
+        toast(`Grew ${lv} to ${sizeGiB} GiB.`);
+        refresh();
+      } catch (error) {
+        toast(error.message);
+        button.disabled = false;
       }
     },
     events,

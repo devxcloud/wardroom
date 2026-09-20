@@ -59,13 +59,18 @@ export class AgentStore {
       ALTER TABLE shared_infra.agent_operations ADD COLUMN IF NOT EXISTS outcome jsonb;
       ALTER TABLE shared_infra.agent_tokens ADD COLUMN IF NOT EXISTS last_used_at timestamptz;
       ALTER TABLE shared_infra.agent_tokens ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'mcp';
+      ALTER TABLE shared_infra.agent_tokens ALTER COLUMN expires_at DROP NOT NULL;
       CREATE TABLE IF NOT EXISTS shared_infra.agent_resources (
       kind text NOT NULL, name text NOT NULL, project text NOT NULL REFERENCES shared_infra.projects(name),
       status text NOT NULL DEFAULT 'ready', PRIMARY KEY(kind,name));`);
   }
   async issue(input) {
     const value = tokenInput(input);
-    return this.issueValue(value, "mcp", `${value.days} days`);
+    return this.issueValue(
+      value,
+      "mcp",
+      value.days === 0 ? null : `${value.days} days`,
+    );
   }
   async issueChat(input) {
     const value = tokenInput({ ...input, days: 1, label: "Dashboard AI" });
@@ -96,7 +101,7 @@ export class AgentStore {
       throw new InputError("Invalid agent credentials.", 401);
     const { rows } = await this.pool.query(
       `UPDATE shared_infra.agent_tokens SET last_used_at=now()
-      WHERE token_hash=$1 AND revoked_at IS NULL AND expires_at>now()
+      WHERE token_hash=$1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>now())
       RETURNING id,label,scope,project,destructive`,
       [digest(token)],
     );

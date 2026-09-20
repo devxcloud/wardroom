@@ -1,4 +1,5 @@
 import importlib.util
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -42,6 +43,40 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual(n["wlan0"]["txBytes"], 200)
         routes = "Iface Destination Gateway Flags RefCnt Use Metric Mask\nwlan0 00000000 0 0003 0 0 600 0\neth0 00000000 0 0003 0 0 100 0"
         self.assertEqual(collector.primary_interface(routes), "eth0")
+
+    def test_lvm_mapper_names(self):
+        self.assertEqual(collector.decode_mapper_name("ubuntu--vg-ubuntu--lv"), ("ubuntu-vg", "ubuntu-lv"))
+        self.assertEqual(collector.decode_mapper_name("vg-lv--name"), ("vg", "lv-name"))
+        self.assertIsNone(collector.decode_mapper_name("nohyphen"))
+
+    def test_lvm_volume_group_free_from_sysfs(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "nvme0n1p3").mkdir()
+            (root / "nvme0n1p3" / "size").write_text("1993974400\n")
+            dm = root / "dm-0"
+            (dm / "dm").mkdir(parents=True)
+            (dm / "slaves" / "dm-1").mkdir(parents=True)
+            (dm / "size").write_text("209715200\n")
+            (dm / "dm" / "name").write_text("ubuntu--vg-ubuntu--lv\n")
+            (dm / "dm" / "uuid").write_text("LVM-abc\n")
+            crypt = root / "dm-1"
+            (crypt / "dm").mkdir(parents=True)
+            (crypt / "slaves" / "nvme0n1p3").mkdir(parents=True)
+            (crypt / "size").write_text("1993974400\n")
+            (crypt / "dm" / "name").write_text("nvme0n1p3_crypt\n")
+            (crypt / "dm" / "uuid").write_text("CRYPT-LUKS2-xyz\n")
+            info = collector.lvm_info(root)
+        self.assertTrue(info["available"])
+        self.assertEqual(info["source"], "sysfs")
+        vg = info["volumeGroups"][0]
+        self.assertEqual(vg["name"], "ubuntu-vg")
+        self.assertEqual(vg["sizeBytes"], 1993974400 * 512)
+        self.assertEqual(vg["allocatedBytes"], 209715200 * 512)
+        self.assertEqual(vg["freeBytes"], (1993974400 - 209715200) * 512)
+        self.assertEqual(info["logicalVolumes"][0]["name"], "ubuntu-lv")
+        self.assertEqual(info["physicalVolumes"][0]["name"], "nvme0n1p3_crypt")
+        self.assertEqual(collector.lvm_info(Path("/nonexistent-lvm-sysfs"))["available"], False)
 
     def test_docker_units(self):
         self.assertEqual(collector.size_bytes("1.5MiB"), 1572864)

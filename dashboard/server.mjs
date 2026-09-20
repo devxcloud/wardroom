@@ -204,6 +204,65 @@ export function createApp(infra, config) {
             await infra.tools.applyFault(data.target, data.preset),
           );
         }
+        if (req.method === "POST" && path === "/api/containers") {
+          if (!infra.lab)
+            throw new InputError("Container control is not configured.", 503);
+          const data = await body(req);
+          if (
+            !["start", "stop", "restart", "remove"].includes(data?.action) ||
+            typeof data.name !== "string"
+          )
+            throw new InputError("Choose a container action and name.");
+          return json(res, 200, await infra.lab.containers(data.action, data));
+        }
+        if (req.method === "POST" && path === "/api/volumes") {
+          if (!infra.lab)
+            throw new InputError("Container control is not configured.", 503);
+          return json(
+            res,
+            200,
+            await infra.lab.containers("volume_create", await body(req)),
+          );
+        }
+        if (req.method === "POST" && path === "/api/volumes/remove") {
+          if (!infra.lab)
+            throw new InputError("Container control is not configured.", 503);
+          return json(
+            res,
+            200,
+            await infra.lab.containers("volume_remove", await body(req)),
+          );
+        }
+        if (req.method === "POST" && path === "/api/networks") {
+          if (!infra.lab)
+            throw new InputError("Container control is not configured.", 503);
+          return json(
+            res,
+            200,
+            await infra.lab.containers("network_create", await body(req)),
+          );
+        }
+        if (req.method === "POST" && path === "/api/networks/remove") {
+          if (!infra.lab)
+            throw new InputError("Container control is not configured.", 503);
+          return json(
+            res,
+            200,
+            await infra.lab.containers("network_remove", await body(req)),
+          );
+        }
+        if (req.method === "POST" && path === "/api/lvm/extend") {
+          if (!infra.lab)
+            throw new InputError("Host storage control is not configured.", 503);
+          const data = await body(req);
+          if (
+            typeof data?.vg !== "string" ||
+            typeof data?.lv !== "string" ||
+            !Number.isInteger(data.sizeGiB)
+          )
+            throw new InputError("Choose a volume group, logical volume and sizeGiB.");
+          return json(res, 200, await infra.lab.host("extend", data));
+        }
         if (req.method !== "GET")
           throw new InputError("Method not allowed.", 405);
         if (path === "/api/overview")
@@ -221,6 +280,21 @@ export function createApp(infra, config) {
             await check.body?.cancel();
           } catch {}
           return json(res, 200, { url: `http://${config.host}/mcp`, ready });
+        }
+        if (path === "/api/volumes") {
+          if (!infra.lab)
+            throw new InputError("Container control is not configured.", 503);
+          return json(res, 200, await infra.lab.containers("volume_list"));
+        }
+        if (path === "/api/networks") {
+          if (!infra.lab)
+            throw new InputError("Container control is not configured.", 503);
+          return json(res, 200, await infra.lab.containers("network_list"));
+        }
+        if (path === "/api/lvm") {
+          if (!infra.lab)
+            throw new InputError("Host storage control is not configured.", 503);
+          return json(res, 200, await infra.lab.host("list"));
         }
         if (path === "/api/system")
           return json(
@@ -313,6 +387,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const settings = new AiSettings(infra.pool, config.aiSettingsKey);
     await settings.initialize();
     const lab = new AgentLab(infra, new AgentResources(infra));
+    infra.lab = lab;
     infra.ai = {
       settings,
       conversations: new AiConversations({

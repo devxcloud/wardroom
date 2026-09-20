@@ -22,6 +22,17 @@ const toolLabels = {
   database_list: "List databases",
   container_list: "Inspect containers",
   container_logs: "Read container logs",
+  container_action: "Change a container",
+  volume_list: "List Docker volumes",
+  volume_create: "Create a Docker volume",
+  volume_remove: "Remove a Docker volume",
+  network_list: "List Docker networks",
+  network_create: "Create a Docker network",
+  network_remove: "Remove a Docker network",
+  user_createdb: "Allow the project login to create databases",
+  database_create: "Create a project database",
+  lvm_list: "List LVM volume groups",
+  lvm_extend: "Grow a logical volume",
 };
 
 const toolLabel = (name) =>

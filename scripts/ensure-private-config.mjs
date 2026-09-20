@@ -14,13 +14,11 @@ const keys = {
   RI_ENCRYPTION_KEY: () => randomBytes(32).toString("base64url"),
   DASHBOARD_SESSION_SECRET: () => randomBytes(32).toString("hex"),
   AI_SETTINGS_KEY: () => randomBytes(32).toString("hex"),
+  AGENT_BROKER_SECRET: () => randomBytes(32).toString("hex"),
 };
 if (process.argv.includes("--api")) {
   keys.HOPPSCOTCH_DB_PASSWORD = () => randomBytes(32).toString("hex");
   keys.HOPPSCOTCH_ENCRYPTION_KEY = () => randomBytes(16).toString("hex");
-}
-if (process.argv.includes("--agents")) {
-  keys.AGENT_BROKER_SECRET = () => randomBytes(32).toString("hex");
 }
 for (const [key, generate] of Object.entries(keys)) {
   if (new RegExp(`^${key}=.+$`, "m").test(content)) continue;

@@ -108,6 +108,99 @@ def filesystem_info():
     return sorted(result, key=lambda x: (x["mount"] != "/", x["mount"]))[:32]
 
 
+def empty_lvm(source="none"):
+    return {"available": False, "source": source, "volumeGroups": [],
+            "physicalVolumes": [], "logicalVolumes": []}
+
+
+def decode_mapper_name(name):
+    # LVM encodes '-' in VG/LV names as '--' and separates VG from LV with a single '-'.
+    parts = name.replace("--", "\0").split("-", 1)
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        return None
+    return tuple(part.replace("\0", "-") for part in parts)
+
+
+def read_sectors(path):
+    try:
+        value = int(Path(path).read_text().strip())
+    except (OSError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def lvm_dm(block_root, name):
+    uuid_path = Path(block_root) / name / "dm" / "uuid"
+    try:
+        return uuid_path.read_text().strip().startswith("LVM-")
+    except OSError:
+        return False
+
+
+def device_label(block_root, name):
+    try:
+        mapped = (Path(block_root) / name / "dm" / "name").read_text().strip()
+    except OSError:
+        mapped = ""
+    return mapped or name
+
+
+def lvm_info(block_root=None):
+    # Sysfs is world-readable; vgs(8) often needs privileges the user collector lacks.
+    # VG free is PV size minus LV size, so a few megabytes of metadata are counted as free.
+    root = Path(block_root or "/sys/class/block")
+    if not root.is_dir():
+        return empty_lvm()
+    try:
+        devices = list(root.iterdir())
+    except OSError:
+        return empty_lvm()
+    groups = {}
+    for dev in devices:
+        try:
+            uuid = (dev / "dm" / "uuid").read_text().strip()
+            encoded = (dev / "dm" / "name").read_text().strip()
+        except OSError:
+            continue
+        if not uuid.startswith("LVM-"):
+            continue
+        names = decode_mapper_name(encoded)
+        sectors = read_sectors(dev / "size")
+        if not names or not sectors:
+            continue
+        vg_name, lv_name = names
+        group = groups.setdefault(vg_name, {"pvs": {}, "lvs": []})
+        group["lvs"].append({"name": lv_name, "vg": vg_name, "sizeBytes": sectors * 512,
+                             "device": "/dev/mapper/" + encoded})
+        slaves = dev / "slaves"
+        if not slaves.is_dir():
+            continue
+        try:
+            slave_names = [item.name for item in slaves.iterdir()]
+        except OSError:
+            continue
+        for slave in slave_names:
+            if lvm_dm(root, slave):
+                continue
+            pv_sectors = read_sectors(root / slave / "size")
+            if pv_sectors:
+                group["pvs"][device_label(root, slave)] = pv_sectors * 512
+    volume_groups, physical_volumes, logical_volumes = [], [], []
+    for vg_name, group in sorted(groups.items()):
+        allocated = sum(lv["sizeBytes"] for lv in group["lvs"])
+        size = sum(group["pvs"].values()) or allocated
+        volume_groups.append({"name": vg_name, "sizeBytes": size, "allocatedBytes": allocated,
+                              "freeBytes": max(0, size - allocated),
+                              "pvCount": len(group["pvs"]), "lvCount": len(group["lvs"])})
+        physical_volumes.extend({"name": pv_name, "vg": vg_name, "sizeBytes": pv_size}
+                                for pv_name, pv_size in sorted(group["pvs"].items()))
+        logical_volumes.extend(sorted(group["lvs"], key=lambda lv: lv["name"]))
+    if not volume_groups:
+        return empty_lvm()
+    return {"available": True, "source": "sysfs", "volumeGroups": volume_groups[:16],
+            "physicalVolumes": physical_volumes[:32], "logicalVolumes": logical_volumes[:32]}
+
+
 def size_bytes(value):
     match = re.fullmatch(r"\s*([\d.]+)\s*([kKMGTPE]?i?B)\s*", value)
     if not match:
@@ -209,6 +302,7 @@ class Collector:
                               for name, values in cpu.items() if name != "cpu"]},
             "memory": memory_info(read("/proc/meminfo")),
             "storage": filesystem_info(),
+            "lvm": lvm_info(),
             "network": {"primary": primary, "rxBytesPerSecond": primary_data.get("rxBytesPerSecond"),
                         "txBytesPerSecond": primary_data.get("txBytesPerSecond"), "interfaces": interfaces[:32]},
             "io": {"readBytesPerSecond": total("readBytesPerSecond"), "writeBytesPerSecond": total("writeBytesPerSecond"), "devices": disk_values[:32]},

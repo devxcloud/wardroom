@@ -44,6 +44,40 @@ function normalizeSample(value, now) {
     reservedBytes: number(v.reservedBytes),
     usedPercent: number(v.usedPercent, 100),
   });
+  const emptyLvm = {
+    available: false,
+    source: "none",
+    volumeGroups: [],
+    physicalVolumes: [],
+    logicalVolumes: [],
+  };
+  const parseLvm = (value) => {
+    if (value == null) return emptyLvm;
+    const raw = record(value);
+    return {
+      available: bool(raw.available),
+      source: text(raw.source, 16),
+      volumeGroups: list(raw.volumeGroups, 16, (g) => ({
+        name: text(g.name, 128),
+        sizeBytes: number(g.sizeBytes),
+        freeBytes: number(g.freeBytes),
+        allocatedBytes: number(g.allocatedBytes),
+        pvCount: number(g.pvCount, 256),
+        lvCount: number(g.lvCount, 256),
+      })),
+      physicalVolumes: list(raw.physicalVolumes, 32, (p) => ({
+        name: text(p.name, 128),
+        vg: text(p.vg, 128),
+        sizeBytes: number(p.sizeBytes),
+      })),
+      logicalVolumes: list(raw.logicalVolumes, 32, (l) => ({
+        name: text(l.name, 128),
+        vg: text(l.vg, 128),
+        sizeBytes: number(l.sizeBytes),
+        device: text(l.device, 256),
+      })),
+    };
+  };
   const result = {
     collectedAt: new Date(at).toISOString(),
     host: {
@@ -73,6 +107,7 @@ function normalizeSample(value, now) {
       swapUsedBytes: number(mem.swapUsedBytes),
     },
     storage: list(data.storage, 32, (v) => volume(record(v))),
+    lvm: parseLvm(data.lvm),
     network: {
       primary: network.primary === null ? null : text(network.primary, 64),
       rxBytesPerSecond: metric(network.rxBytesPerSecond),

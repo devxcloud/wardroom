@@ -4,11 +4,11 @@ DOCKER_COMPOSE = bash scripts/compose.sh
 .PHONY: mcp-up mcp-down agent-token agent-tokens agent-revoke agent-history
 
 mcp-up:
-	node scripts/ensure-private-config.mjs --agents
-	$(DOCKER_COMPOSE) --profile agents --profile agent-control up -d --build --wait --wait-timeout 120 mcp agent-broker dashboard gateway
+	node scripts/ensure-private-config.mjs
+	$(DOCKER_COMPOSE) --profile agents up -d --build --wait --wait-timeout 120 mcp agent-broker host-broker dashboard gateway
 
 mcp-down:
-	$(DOCKER_COMPOSE) --profile agents --profile agent-control stop mcp agent-broker
+	$(DOCKER_COMPOSE) --profile agents stop mcp
 
 agent-token:
 	node scripts/agent-token.mjs issue $(ARGS)

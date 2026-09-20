@@ -83,6 +83,20 @@ export class Infrastructure {
         [value.name, value],
       );
     }
+    await this.ensureProjectCreatedb();
+  }
+
+  async ensureProjectCreatedb() {
+    const names = (await this.projects()).map((p) => p.name);
+    if (!names.length) return;
+    const found = (
+      await this.pool.query(
+        "SELECT rolname FROM pg_roles WHERE rolname=ANY($1) AND NOT rolcreatedb",
+        [names],
+      )
+    ).rows;
+    for (const role of found)
+      await this.pool.query(`ALTER ROLE ${qi(role.rolname)} CREATEDB`);
   }
 
   async projects() {
@@ -154,10 +168,7 @@ export class Infrastructure {
         throw new InputError(
           "New database passwords must have at least 12 characters.",
         );
-      if (
-        role &&
-        (!existing || role.rolsuper || role.rolcreaterole || role.rolcreatedb)
-      )
+      if (role && (!existing || role.rolsuper || role.rolcreaterole))
         throw new InputError(
           "Existing role cannot be adopted by this project.",
           409,
@@ -209,8 +220,9 @@ export class Infrastructure {
       registered = true;
       if (!role)
         await client.query(
-          `CREATE ROLE ${qi(p.name)} LOGIN PASSWORD ${ql(input.password)}`,
+          `CREATE ROLE ${qi(p.name)} LOGIN NOSUPERUSER CREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD ${ql(input.password)}`,
         );
+      else await client.query(`ALTER ROLE ${qi(p.name)} CREATEDB`);
       for (const db of [p.database, p.testDatabase]) {
         if (
           !(

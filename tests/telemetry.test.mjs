@@ -14,11 +14,16 @@ test("telemetry allowlists fields and distinguishes unknown values from zero", (
   data.docker.items[0].env = "secret";
   data.cpu.percent = null;
   data.io.readBytesPerSecond = 0;
+  data.lvm.volumeGroups[0].secret = "not-for-browser";
   const clean = validateSample(data);
   assert.equal(clean.secret, undefined);
   assert.equal(clean.docker.items[0].env, undefined);
   assert.equal(clean.cpu.percent, null);
   assert.equal(summary(clean).diskRead, 0);
+  assert.equal(clean.lvm.volumeGroups[0].freeBytes, 85000);
+  assert.equal(clean.lvm.volumeGroups[0].secret, undefined);
+  delete data.lvm;
+  assert.equal(validateSample(data).lvm.available, false);
 });
 test("reject malformed, unbounded, stale and future telemetry", () => {
   for (const change of [
@@ -39,6 +44,15 @@ test("reject malformed, unbounded, stale and future telemetry", () => {
     },
     (s) => {
       s.io.readBytesPerSecond = -1;
+    },
+    (s) => {
+      s.lvm = {
+        available: true,
+        source: "sysfs",
+        volumeGroups: [null],
+        physicalVolumes: [],
+        logicalVolumes: [],
+      };
     },
   ]) {
     const s = sample();

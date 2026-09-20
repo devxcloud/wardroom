@@ -49,15 +49,22 @@ export class AgentResources {
         [user],
       )
     ).rows[0];
-    if (!role || Object.values(role).some(Boolean))
+    if (
+      !role ||
+      role.rolsuper ||
+      role.rolcreaterole ||
+      role.rolreplication ||
+      role.rolbypassrls ||
+      role.memberships
+    )
       throw new InputError("Role is missing or has unsafe privileges.", 403);
   }
   async owned(project, kind, name, { missing = false } = {}) {
+    if (protectedNames.has(name))
+      throw new InputError("Resource is not owned by this project.", 403);
     const entry = (await this.list(project)).find(
       (r) => r.kind === kind && r.name === name,
     );
-    if (!entry || protectedNames.has(name))
-      throw new InputError("Resource is not owned by this project.", 403);
     if (kind === "database") {
       const db = (
         await this.pool.query(
@@ -68,8 +75,20 @@ export class AgentResources {
       if (db && db.owner !== project)
         throw new InputError("Database ownership has changed.", 409);
       if (!db && !missing) throw new InputError("Database not found.", 404);
-    } else if (kind === "user" && !missing) await this.role(name);
-    return entry;
+      if (entry) return entry;
+      if (db && db.owner === project)
+        return { kind, name, project, status: "ready", base: false };
+    } else if (entry) {
+      if (kind === "user" && !missing) await this.role(name);
+      return entry;
+    }
+    throw new InputError("Resource is not owned by this project.", 403);
+  }
+  async grantCreatedb(project) {
+    await this.project(project);
+    await this.role(project);
+    await this.pool.query(`ALTER ROLE ${qi(project)} CREATEDB`);
+    return { project, user: project, createdb: true };
   }
   async create(project, kind, name, password) {
     const p = await this.project(project);

@@ -27,7 +27,7 @@ export function sample(now = Date.now()) {
     storage: [
       {
         mount: "/",
-        device: "/dev/test",
+        device: "/dev/mapper/ubuntu--vg-ubuntu--lv",
         fs: "ext4",
         totalBytes: 10000,
         usedBytes: 6000,
@@ -36,6 +36,31 @@ export function sample(now = Date.now()) {
         usedPercent: 60,
       },
     ],
+    lvm: {
+      available: true,
+      source: "sysfs",
+      volumeGroups: [
+        {
+          name: "ubuntu-vg",
+          sizeBytes: 100000,
+          freeBytes: 85000,
+          allocatedBytes: 15000,
+          pvCount: 1,
+          lvCount: 1,
+        },
+      ],
+      physicalVolumes: [
+        { name: "nvme0n1p3", vg: "ubuntu-vg", sizeBytes: 100000 },
+      ],
+      logicalVolumes: [
+        {
+          name: "ubuntu-lv",
+          vg: "ubuntu-vg",
+          sizeBytes: 15000,
+          device: "/dev/mapper/ubuntu--vg-ubuntu--lv",
+        },
+      ],
+    },
     network: {
       primary: "eth0",
       rxBytesPerSecond: 100,

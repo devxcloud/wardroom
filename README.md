@@ -19,7 +19,7 @@ Wardroom is a self-hosted development tool for you and trusted teammates—not a
 | Jaeger v2                | OTLP over gRPC/HTTP and an in-memory trace explorer                            |
 | Dozzle                   | Live logs for every container on the host through a read-only socket proxy     |
 | Caddy                    | One memorable URL for the dashboard and every web tool                         |
-| Host collector           | CPU, memory, storage, disk I/O, network, per-core, and container telemetry     |
+| Host collector           | CPU, memory, filesystems, LVM volume groups, disk I/O, network, per-core, and container telemetry |
 | Optional test lab        | WireMock API simulation plus safe, preset-only Toxiproxy faults                |
 
 Everything heavy runs on the devbox. Your workstation only needs Docker CLI, SSH, Node.js for development, and access to the same Tailnet.
@@ -29,7 +29,8 @@ Everything heavy runs on the devbox. Your workstation only needs Docker CLI, SSH
 The built-in dashboard is more than a launcher:
 
 - live topology and health checks;
-- CPU, memory, storage, I/O, network, and container charts;
+- CPU, memory, filesystem and LVM volume-group capacity, I/O, and network;
+- container, named-volume, and Docker network management;
 - PostgreSQL database, role, schema, table, and paged-record exploration;
 - one-flow project provisioning for PostgreSQL, pgvector, MinIO, and Redis;
 - authenticated access to logs, RedisInsight, Jaeger, and WireMock;
@@ -191,7 +192,7 @@ MCP uses the same gateway address as the dashboard: `http://devbox/mcp` or `http
 
 Mutation tools require a UUID `operationId`. Repeating a completed operation ID with identical arguments returns its safe recorded outcome without repeating the write. An interrupted/uncertain operation requires operator inspection—not an automatic retry with a new ID. Project SQL and table previews use an actual project database login, never the infrastructure admin; supplied passwords, SQL results, logs and object bodies can still enter your AI client's context/history. Do not use real customer data.
 
-See [agent operations](docs/agent-tools.md) for tool boundaries, recovery and test commands. `make mcp-down` stops MCP and the private container broker without deleting resources. Built-in chat uses the same catalog directly; external agents continue to use MCP independently.
+See [agent operations](docs/agent-tools.md) for tool boundaries, recovery and test commands. `make mcp-down` stops MCP without deleting resources or the container broker. Built-in chat uses the same catalog directly; external agents continue to use MCP independently.
 
 ## Everyday commands
 

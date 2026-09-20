@@ -1,9 +1,10 @@
 import { mountSystem } from "./system.js";
+import { mountContainers } from "./containers.js";
 import { mountTools } from "./tools.js";
 import { mountAi } from "./ai.js";
 import { mountAssistant } from "./assistant.js";
 
-let disposeSystem = () => {};
+let disposeView = () => {};
 let disposeAi = () => {};
 let assistantController;
 const root = document.querySelector("#app");
@@ -41,6 +42,7 @@ const paths = {
   mail: "M3 5h18v14H3zM3 5l9 8 9-8",
   redis: "m12 3 10 5-10 5L2 8l10-5ZM2 12l10 5 10-5M2 16l10 5 10-5",
   server: "M4 3h16v7H4zm0 11h16v7H4zM7 6h1m-1 11h1",
+  containers: "M4 8l8-4 8 4-8 4-8-4Zm0 4 8 4 8-4M4 16l8 4 8-4",
   lock: "M5 10h14v11H5zm3 0V6a4 4 0 0 1 8 0v4",
   logout: "M9 4H3v16h6m4-13 5 5-5 5m-6-5h15",
   table: "M3 4h18v16H3zM3 10h18M9 4v16",
@@ -127,7 +129,7 @@ async function api(path, options = {}) {
   return data;
 }
 function login() {
-  disposeSystem();
+  disposeView();
   disposeAi();
   disposeAi = () => {};
   assistantController?.dispose();
@@ -170,6 +172,7 @@ function shell() {
   const names = {
     overview: "Overview",
     system: "System",
+    containers: "Containers",
     tools: "Tools",
     "ai-mcp": "AI & MCP",
     database: "PostgreSQL",
@@ -196,6 +199,7 @@ function assistantContext() {
   return {
     overview: "Overview",
     system: "System",
+    containers: "Containers",
     tools: "Tools",
     "ai-mcp": "AI & MCP",
     database: "PostgreSQL",
@@ -368,8 +372,8 @@ function bindFilter() {
   filter();
 }
 async function render() {
-  disposeSystem();
-  disposeSystem = () => {};
+  disposeView();
+  disposeView = () => {};
   disposeAi();
   disposeAi = () => {};
   const seq = ++state.sequence;
@@ -379,11 +383,20 @@ async function render() {
   try {
     if (state.view === "overview") overview();
     else if (state.view === "system")
-      disposeSystem = mountSystem({
+      disposeView = mountSystem({
         main: document.querySelector("#main"),
         api,
         icon,
         openDialog,
+        toast,
+      });
+    else if (state.view === "containers")
+      disposeView = mountContainers({
+        main: document.querySelector("#main"),
+        api,
+        icon,
+        openDialog,
+        toast,
       });
     else if (state.view === "ai-mcp") {
       const main = document.querySelector("#main");
@@ -624,6 +637,7 @@ async function boot() {
       [
         "overview",
         "system",
+        "containers",
         "tools",
         "ai-mcp",
         "database",

@@ -112,7 +112,7 @@ export async function mountAgents(host, api) {
     ${connection.ready ? "" : '<p class="agent-notice">Start MCP on the devbox with <code>make mcp-up</code>. You can create tokens now; clients can connect once it is running.</p>'}
     <div class="agent-layout"><div class="agent-access">
     <form id="agent-form" hidden><h3>Create an agent token</h3><label>Token label<input name="label" required maxlength="80" placeholder="e.g. My coding agent" autocomplete="off"></label>
-    <div class="agent-fields"><label>Access scope<select name="scope"><option value="project">One project</option><option value="admin">Admin · shared infrastructure</option></select></label><label>Expires after<select name="days"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option></select></label></div>
+    <div class="agent-fields"><label>Access scope<select name="scope"><option value="project">One project</option><option value="admin">Admin · shared infrastructure</option></select></label><label>Expires after<select name="days"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option><option value="0">No expiration</option></select></label></div>
     <label data-project-field>Project name<input name="project" required pattern="[a-z][a-z0-9_]{2,47}" placeholder="myapp" autocomplete="off"><small>Existing or new project; 3–48 lowercase letters, numbers or underscores.</small></label>
     <p data-admin-warning class="agent-notice" hidden>Admin scope can manage every project and inspect shared containers. Issue only to an agent you trust.</p>
     <label class="agent-check"><input type="checkbox" name="destructive"><span>Allow destructive operations<small>Enables SQL, resource deletion, password rotation and, for admins, container actions.</small></span></label>
@@ -147,7 +147,8 @@ export async function mountAgents(host, api) {
   let issued = null;
   const date = (value) => (value ? new Date(value).toLocaleString() : "Never");
   const drawTokens = () => {
-    const active = (t) => !t.revoked_at && new Date(t.expires_at) > new Date();
+    const active = (t) =>
+      !t.revoked_at && (!t.expires_at || new Date(t.expires_at) > new Date());
     const shown = tokens.filter(
       (t) => host.querySelector("[data-show-inactive]").checked || active(t),
     );
@@ -157,10 +158,13 @@ export async function mountAgents(host, api) {
           .map((t) => {
             const status = t.revoked_at
               ? "Revoked"
-              : new Date(t.expires_at) <= new Date()
+              : t.expires_at && new Date(t.expires_at) <= new Date()
                 ? "Expired"
                 : "Active";
-            return `<article class="agent-token-row" aria-label="${esc(t.label)}"><div><strong>${esc(t.label)}</strong><p>${esc(t.scope === "admin" ? "Admin · all projects" : t.project)} · ${t.destructive ? "Destructive enabled" : "Scoped writes"}</p><small>Last used ${esc(date(t.last_used_at))} · Expires ${esc(date(t.expires_at))}</small><details><summary>Token details</summary><code>${esc(t.id)}</code></details></div><div class="agent-token-action"><span>${status}</span><button class="button small" data-revoke="${esc(t.id)}" ${status !== "Active" ? "disabled" : ""}>Revoke</button></div></article>`;
+            const expiry = t.expires_at
+              ? `Expires ${date(t.expires_at)}`
+              : "Does not expire";
+            return `<article class="agent-token-row" aria-label="${esc(t.label)}"><div><strong>${esc(t.label)}</strong><p>${esc(t.scope === "admin" ? "Admin · all projects" : t.project)} · ${t.destructive ? "Destructive enabled" : "Scoped writes"}</p><small>Last used ${esc(date(t.last_used_at))} · ${esc(expiry)}</small><details><summary>Token details</summary><code>${esc(t.id)}</code></details></div><div class="agent-token-action"><span>${status}</span><button class="button small" data-revoke="${esc(t.id)}" ${status !== "Active" ? "disabled" : ""}>Revoke</button></div></article>`;
           })
           .join("")}`
       : '<p class="agent-empty">No active tokens. Create a token to connect an agent, or show inactive tokens.</p>';
