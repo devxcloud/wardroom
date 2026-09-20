@@ -81,7 +81,7 @@ grep -q 'refusing to overwrite' "$temp_dir/wrong/stderr"
 
 empty_bin="$temp_dir/empty-bin"
 mkdir -p "$empty_bin"
-if PATH="$empty_bin:/usr/bin:/bin" /bin/bash "$repo_root/scripts/setup-context.sh" >"$temp_dir/no-docker.out" 2>"$temp_dir/no-docker.err"; then
+if PATH="$empty_bin" /bin/bash "$repo_root/scripts/setup-context.sh" >"$temp_dir/no-docker.out" 2>"$temp_dir/no-docker.err"; then
   echo "missing Docker CLI should fail" >&2
   exit 1
 fi
