@@ -91,9 +91,9 @@ make backup DB=postgres
 make restore DB=example_recovery FILE=backups/example-<timestamp>.dump
 ```
 
-Backups are custom-format logical dumps on the workstation under ignored `backups/`, created with private file permissions. Back up `postgres` as well to capture the registry. Dumps do not include cluster roles or passwords; retain project credential records separately. The scripts refuse overwriting backup filenames and existing restore databases.
+Backups are custom-format logical dumps on the workstation under ignored `backups/`, created with private file permissions. Back up `postgres` as well to capture the registry. Dumps do not include cluster roles or passwords; retain project credential records separately. The scripts refuse overwriting backup filenames and existing restore databases. A failed `make backup` deletes the incomplete workstation file. `make restore` refuses paths containing `.incomplete`.
 
-Restore uses a single transaction and stops on errors. The new database is owned by the infrastructure admin; reassignment to a project is a separate deliberate operation. If restoration fails after database creation, the empty target can remain for inspection. Never use an incomplete backup marked by a failed backup command.
+Restore uses a single transaction and stops on errors. The new database is owned by the infrastructure admin; reassignment to a project is a separate deliberate operation. If restoration fails after database creation, the empty target can remain for inspection. MCP `database_restore` is different: it defaults to `{bucket}-backups`, restores as the project login, and drops the extra database if `pg_restore` fails.
 
 For MinIO backups, use `mc mirror` to another S3 endpoint:
 

@@ -89,6 +89,10 @@ test("mail tools hide other projects, refuse unscoped deletes, and truncated fol
   assert.equal(listed.mailDomain, "thryx.test");
   assert.equal(listed.truncated, true);
   assert.match(calls[0][1], /thryx\.test/);
+  assert.match(
+    decodeURIComponent(calls[0][1].replaceAll("+", "%20")),
+    /thryx\.test OR thryx\.local/,
+  );
   await assert.rejects(mail.get({ project: "thryx", id: "drop" }), /mail domain/);
   await assert.rejects(mail.remove({ project: "thryx", id: "drop" }), /mail domain/);
   await mail.remove({ project: "thryx", id: "keep" });

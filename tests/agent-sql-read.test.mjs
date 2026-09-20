@@ -80,4 +80,12 @@ test("project_connections secrets stay off until a destructive token asks", asyn
   assert.match(filled.text, /S3_ACCESS_KEY=wrkey/);
   assert.equal(filled.secrets.database, true);
   assert.equal(filled.secrets.s3, true);
+  await assert.rejects(
+    catalog.call(
+      { scope: "project", project: "alpha", destructive: true, source: "chat" },
+      "project_connections",
+      { project: "alpha", includeSecrets: true },
+    ),
+    /Chat cannot return live connection secrets/,
+  );
 });

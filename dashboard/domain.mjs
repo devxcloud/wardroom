@@ -66,6 +66,15 @@ export function connectionText(project, host, secrets = {}) {
     : "<PROJECT_DB_PASSWORD>";
   const s3Access = secrets.s3AccessKey || "<MINIO_ROOT_USER>";
   const s3Secret = secrets.s3SecretKey || "<MINIO_ROOT_PASSWORD>";
+  const extras = Object.entries(secrets.dbUsers || {})
+    .filter(([user]) => user !== project.name)
+    .map(
+      ([user, password]) =>
+        `# ${user}\n# postgres://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:5434/${project.database}`,
+    );
+  const extraBlock = extras.length
+    ? `\n# Extra project logins\n${extras.join("\n")}`
+    : "";
   return `# ${project.name} • shared development infrastructure
 # Replace remaining placeholders with your local credentials.
 DATABASE_URL=postgres://${encodeURIComponent(project.name)}:${dbPassword}@${host}:5434/${project.database}
@@ -82,7 +91,7 @@ S3_ACCESS_KEY=${s3Access}
 S3_SECRET_KEY=${s3Secret}
 SMTP_HOST=${host}
 SMTP_PORT=1125
-MAIL_DOMAIN=${project.name}.test`;
+MAIL_DOMAIN=${project.name}.test${extraBlock}`;
 }
 
 export function pageOffset(value) {

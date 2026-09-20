@@ -241,7 +241,17 @@ export function mountSystem({ main, api, icon, openDialog, toast = () => {} }) {
     const groups = s.lvm?.available ? s.lvm.volumeGroups : [];
     const lvmPanel = main.querySelector("#system-lvm-panel");
     lvmPanel.hidden = !groups.length;
-    main.querySelector("#system-lvm").innerHTML = groups
+    const lvmRoot = main.querySelector("#system-lvm");
+    const drafts = {};
+    lvmRoot.querySelectorAll("form.lvm-grow").forEach((form) => {
+      const input = form.elements.sizeGiB;
+      if (!input) return;
+      drafts[`${form.dataset.vg}/${form.dataset.lv}`] = {
+        value: input.value,
+        focused: document.activeElement === input,
+      };
+    });
+    lvmRoot.innerHTML = groups
       .map((g) => {
         const allocated = g.sizeBytes
           ? Math.max(0, Math.min(100, (100 * g.allocatedBytes) / g.sizeBytes))
@@ -263,6 +273,13 @@ export function mountSystem({ main, api, icon, openDialog, toast = () => {} }) {
         }</div>`;
       })
       .join("");
+    lvmRoot.querySelectorAll("form.lvm-grow").forEach((form) => {
+      const draft = drafts[`${form.dataset.vg}/${form.dataset.lv}`];
+      if (!draft) return;
+      const input = form.elements.sizeGiB;
+      input.value = draft.value;
+      if (draft.focused) input.focus();
+    });
     main.querySelector("#system-interfaces").innerHTML = s.network.interfaces
       .map(
         (i) =>

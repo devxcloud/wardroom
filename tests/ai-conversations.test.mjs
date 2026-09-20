@@ -468,3 +468,99 @@ test("conversation rejects cross-owner access, oversized messages and concurrent
   release();
   await active;
 });
+
+test("a full conversation releases the workspace and pending turns refuse new messages", async (t) => {
+  const calls = [];
+  const definition = {
+    name: "sql_execute",
+    description: "Run SQL",
+    schema: z.object({
+      project: z.string(),
+      sql: z.string(),
+      operationId: z.string().uuid().optional(),
+    }),
+    mutation: true,
+    destructive: true,
+  };
+  const manager = new AiConversations({
+    settings: {
+      private: async () => ({
+        baseUrl: "https://provider.test/v1",
+        model: "sample",
+      }),
+    },
+    store: {
+      issueChat: async () => ({ token: "token-1", id: "token-1" }),
+      authenticate: async () => ({
+        id: "token-1",
+        scope: "admin",
+        destructive: false,
+      }),
+      revoke: async () => {},
+    },
+    catalog: {
+      visible: () => [],
+      visibleForApproval: () => [definition],
+      call: async () => {
+        calls.push("sql");
+        return { rowCount: 0 };
+      },
+    },
+    complete: async () => ({
+      content: "",
+      toolCalls: [
+        {
+          id: "call-sql",
+          name: "sql_execute",
+          arguments: '{"project":"alpha","sql":"DROP TABLE sample"}',
+        },
+      ],
+    }),
+  });
+  t.after(() => manager.dispose());
+  const full = await manager.create("owner-a", {
+    scope: "admin",
+    destructive: false,
+  });
+  manager.items.get(full.id).messages.push({
+    role: "assistant",
+    content: "x".repeat(256 * 1024),
+  });
+  await assert.rejects(
+    manager.turn(
+      "owner-a",
+      full.id,
+      "more",
+      () => {},
+      new AbortController().signal,
+    ),
+    /full/,
+  );
+  assert.equal(manager.get("owner-a", full.id).active, false);
+  assert.equal(manager.active, 0);
+  const pending = await manager.create("owner-a", {
+    scope: "admin",
+    destructive: false,
+  });
+  const events = [];
+  await manager.turn(
+    "owner-a",
+    pending.id,
+    "Drop sample",
+    (event) => events.push(event),
+    new AbortController().signal,
+  );
+  assert.equal(events.at(-2).type, "approval-required");
+  assert.equal(events.at(-2).target.sql, "DROP TABLE sample");
+  assert.equal(calls.length, 0);
+  await assert.rejects(
+    manager.turn(
+      "owner-a",
+      pending.id,
+      "also this",
+      () => {},
+      new AbortController().signal,
+    ),
+    /Approve or cancel/,
+  );
+});

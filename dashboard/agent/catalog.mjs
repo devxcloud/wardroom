@@ -84,12 +84,17 @@ export function createCatalog(infra, store, { lab } = {}) {
   );
   add(
     "project_connections",
-    "Connection templates. Pass includeSecrets on a destructive project token to fill the stored database password and MinIO service-account keys. Redis stays a placeholder (shared). The browser connections endpoint never returns secrets.",
+    "Connection templates. Pass includeSecrets on a destructive project token to fill the stored database password, extra login passwords, and MinIO service-account keys. Redis stays a placeholder (shared). Chat cannot return live secrets. The browser connections endpoint never returns secrets.",
     { ...page, includeSecrets: z.boolean().default(false) },
     async (a, actor) => {
       if (a.includeSecrets && actor.destructive !== true)
         throw new InputError(
           "Token does not allow destructive operations.",
+          403,
+        );
+      if (a.includeSecrets && actor.source === "chat")
+        throw new InputError(
+          "Chat cannot return live connection secrets. Retry sql_query after rotate, or use a destructive MCP token.",
           403,
         );
       const stored =
@@ -184,7 +189,7 @@ export function createCatalog(infra, store, { lab } = {}) {
   );
   write(
     "database_create",
-    "Create an extra registered database owned by the project, with pgvector. The project login can also CREATE DATABASE itself after user_createdb.",
+    "Create an extra registered database owned by the project, with pgvector. Name must start with {project}_. The project login can also CREATE DATABASE itself after user_createdb.",
     { database: identifier },
     (a) => resources.create(a.project, "database", a.database),
   );
@@ -206,7 +211,7 @@ export function createCatalog(infra, store, { lab } = {}) {
   );
   write(
     "database_restore",
-    "Restore a custom-format dump object into a new extra database. Objects are reassigned to the project login so the app can read them. Refuses existing names. Destructive.",
+    "Restore a custom-format dump object into a new extra database named {project}_…. Defaults to the project's {bucket}-backups bucket, not the live application bucket. pg_restore runs as the project login (password must already be stored). Refuses existing names and incomplete keys. Destructive.",
     {
       database: identifier,
       bucket: bucketName.optional(),
@@ -252,7 +257,7 @@ export function createCatalog(infra, store, { lab } = {}) {
   );
   write(
     "user_password_rotate",
-    "Rotate a project login password. Omit password to generate one server-side, store it, and return nothing — read it once with project_connections includeSecrets on a destructive token. Passing a password is recorded by the AI client.",
+    "Rotate a project login password. Omit password to generate one server-side, store it, and return nothing. Owner password and extra logins are readable once with project_connections includeSecrets on a destructive MCP token, not from dashboard chat. Passing a password is recorded by the AI client.",
     { user: identifier, password: password.optional() },
     (a) => resources.rotate(a),
     { destructive: true },

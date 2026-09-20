@@ -110,7 +110,7 @@ export class AgentStore {
     const { rows } = await this.pool.query(
       `UPDATE shared_infra.agent_tokens SET last_used_at=now()
       WHERE token_hash=$1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>now())
-      RETURNING id,label,scope,project,destructive`,
+      RETURNING id,label,scope,project,destructive,source`,
       [digest(token)],
     );
     if (!rows.length) throw new InputError("Invalid agent credentials.", 401);

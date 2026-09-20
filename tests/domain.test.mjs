@@ -57,4 +57,11 @@ test("connection templates contain placeholders and test isolation", () => {
   assert.match(filled, /secret-db-pass/);
   assert.match(filled, /S3_ACCESS_KEY=wrabc/);
   assert.doesNotMatch(filled, /<PROJECT_DB_PASSWORD>/);
+  const extras = connectionText(projectInput({ name: "sample" }), "100.1.2.3", {
+    dbPassword: "owner-pass",
+    dbUsers: { sample: "owner-pass", sample_bot: "bot-pass" },
+  });
+  assert.match(extras, /Extra project logins/);
+  assert.match(extras, /sample_bot/);
+  assert.match(extras, /bot-pass/);
 });

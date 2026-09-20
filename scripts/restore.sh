@@ -9,6 +9,10 @@ if [[ ! "$database" =~ ^[a-z][a-z0-9_]{2,62}$ || ! -f "$backup_file" ]]; then
   echo "Provide a new DB name and an existing FILE" >&2
   exit 2
 fi
+if [[ "$backup_file" == *".incomplete"* ]]; then
+  echo "Incomplete dump objects cannot be restored." >&2
+  exit 2
+fi
 validate_context
 # CREATE DATABASE intentionally fails if the target already exists.
 # shellcheck disable=SC2016

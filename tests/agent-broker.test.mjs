@@ -6,6 +6,7 @@ test("broker permits host container and volume operations and protects the contr
   const redis = "a".repeat(64);
   const gateway = "b".repeat(64);
   const extra = "c".repeat(64);
+  const hostBroker = "d".repeat(64);
   let project = "shared-infra";
   const calls = [];
   const request = async (method, path, _limit, body) => {
@@ -39,6 +40,16 @@ test("broker permits host container and volume operations and protects the contr
           Status: "Exited",
           Labels: {},
         },
+        {
+          Id: hostBroker,
+          Names: ["/shared-infra-host-broker-1"],
+          State: "running",
+          Status: "Up",
+          Labels: {
+            "com.docker.compose.project": "shared-infra",
+            "com.docker.compose.service": "host-broker",
+          },
+        },
       ];
     if (path.endsWith("/json")) {
       const id = path.split("/")[2];
@@ -53,13 +64,20 @@ test("broker permits host container and volume operations and protects the contr
                 "com.docker.compose.project": "shared-infra",
                 "com.docker.compose.service": "gateway",
               }
-            : {};
+            : id === hostBroker
+              ? {
+                  "com.docker.compose.project": "shared-infra",
+                  "com.docker.compose.service": "host-broker",
+                }
+              : {};
       const name =
         id === redis
           ? "/shared-infra-redis-1"
           : id === gateway
             ? "/shared-infra-gateway-1"
-            : "/paperclip";
+            : id === hostBroker
+              ? "/shared-infra-host-broker-1"
+              : "/paperclip";
       return {
         Id: id,
         Name: name,
@@ -104,6 +122,11 @@ test("broker permits host container and volume operations and protects the contr
     return {};
   };
   const broker = new DockerControl({ request, project: "shared-infra" });
+  const listedContainers = await broker.run("list");
+  assert.equal(
+    listedContainers.containers.find((c) => c.service === "host-broker").class,
+    "control",
+  );
   await assert.rejects(broker.run("exec", { service: "redis" }), /action/);
   await broker.run("restart", { service: "redis" });
   assert.ok(
@@ -117,6 +140,14 @@ test("broker permits host container and volume operations and protects the contr
   );
   await assert.rejects(
     broker.run("restart", { name: "shared-infra-gateway-1" }),
+    /Control-plane/,
+  );
+  await assert.rejects(
+    broker.run("stop", { name: "shared-infra-host-broker-1" }),
+    /Control-plane/,
+  );
+  await assert.rejects(
+    broker.run("remove", { service: "host-broker" }),
     /Control-plane/,
   );
   await assert.rejects(broker.run("remove", { service: "redis" }), /deleted/);

@@ -12,6 +12,14 @@ export class ProjectSecrets {
     this.pool = pool;
     this.key = keyOf(secret);
   }
+  decrypt(row) {
+    const decipher = createDecipheriv("aes-256-gcm", this.key, row.nonce);
+    decipher.setAuthTag(row.ciphertext.subarray(row.ciphertext.length - 16));
+    return Buffer.concat([
+      decipher.update(row.ciphertext.subarray(0, row.ciphertext.length - 16)),
+      decipher.final(),
+    ]).toString("utf8");
+  }
   async get(project, name) {
     const row = (
       await this.pool.query(
@@ -20,12 +28,7 @@ export class ProjectSecrets {
       )
     ).rows[0];
     if (!row) return null;
-    const decipher = createDecipheriv("aes-256-gcm", this.key, row.nonce);
-    decipher.setAuthTag(row.ciphertext.subarray(row.ciphertext.length - 16));
-    return Buffer.concat([
-      decipher.update(row.ciphertext.subarray(0, row.ciphertext.length - 16)),
-      decipher.final(),
-    ]).toString("utf8");
+    return this.decrypt(row);
   }
   async set(project, name, value) {
     if (typeof value !== "string" || !value.length || value.length > 256)
@@ -42,10 +45,21 @@ export class ProjectSecrets {
     );
   }
   async load(project) {
+    const { rows } = await this.pool.query(
+      "SELECT name,nonce,ciphertext FROM shared_infra.project_secrets WHERE project=$1",
+      [project],
+    );
+    const values = Object.fromEntries(
+      rows.map((row) => [row.name, this.decrypt(row)]),
+    );
+    const dbUsers = {};
+    for (const [name, value] of Object.entries(values))
+      if (name.startsWith("db:")) dbUsers[name.slice(3)] = value;
     return {
-      dbPassword: await this.get(project, `db:${project}`),
-      s3AccessKey: await this.get(project, "s3:access"),
-      s3SecretKey: await this.get(project, "s3:secret"),
+      dbPassword: values[`db:${project}`] || null,
+      dbUsers,
+      s3AccessKey: values["s3:access"] || null,
+      s3SecretKey: values["s3:secret"] || null,
     };
   }
 }

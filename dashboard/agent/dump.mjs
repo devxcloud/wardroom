@@ -3,6 +3,7 @@ import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import {
   GetObjectCommand,
+  HeadObjectCommand,
   CopyObjectCommand,
   DeleteObjectCommand,
 } from "@aws-sdk/client-s3";
@@ -65,6 +66,17 @@ function copySource(bucket, key) {
     .join("/")}`;
 }
 
+function isMissingObject(error) {
+  const status = error?.$metadata?.httpStatusCode;
+  const name = String(error?.name || error?.Code || "");
+  return (
+    status === 404 ||
+    name === "NotFound" ||
+    name === "NoSuchKey" ||
+    name === "NotFoundError"
+  );
+}
+
 export class AgentDump {
   constructor(
     infra,
@@ -76,20 +88,23 @@ export class AgentDump {
     this.spawnProcess = spawnProcess;
     this.putObjectStream = putObjectStream;
   }
-  env() {
+  env(login) {
     const pg = this.infra.config.pg;
     return {
       PATH: `/usr/libexec/postgresql18:/usr/bin:/usr/local/bin:${process.env.PATH || ""}`,
+      HOME: "/tmp",
+      LANG: "C",
+      LC_ALL: "C",
       PGHOST: pg.host,
       PGPORT: String(pg.port),
-      PGUSER: pg.user,
-      PGPASSWORD: pg.password,
+      PGUSER: login?.user || pg.user,
+      PGPASSWORD: login?.password || pg.password,
       PGSSLMODE: "disable",
     };
   }
-  start(command, args) {
+  start(command, args, login) {
     const child = this.spawnProcess(command, args, {
-      env: { ...process.env, ...this.env() },
+      env: this.env(login),
       stdio: ["pipe", "pipe", "pipe"],
     });
     child.stderr?.resume?.();
@@ -151,27 +166,49 @@ export class AgentDump {
   async restore({ project, database, bucket, key }) {
     if (/(^|\/)\.incomplete(\/|$)/.test(key))
       throw new InputError("Incomplete dump objects cannot be restored.");
+    const password =
+      this.resources.secrets &&
+      (await this.resources.secrets.get(project, `db:${project}`));
+    if (!password)
+      throw new InputError(
+        "Store the project login password before restore. Rotate without a password argument first.",
+      );
     const p = await this.resources.project(project);
-    const source = bucket || p.bucket;
+    const source = bucket || `${p.bucket}-backups`;
     await this.resources.owned(project, "bucket", source);
-    await this.resources.create(project, "database", database);
-    const object = await this.infra.s3Client.send(
-      new GetObjectCommand({ Bucket: source, Key: key }),
-    );
-    const child = this.start("pg_restore", [
-      "--no-owner",
-      "--no-acl",
-      "--exit-on-error",
-      "--single-transaction",
-      "--no-password",
-      `--dbname=${database}`,
-    ]);
-    const done = finished(child, "pg_restore");
     try {
+      await this.infra.s3Client.send(
+        new HeadObjectCommand({ Bucket: source, Key: key }),
+      );
+    } catch (error) {
+      if (isMissingObject(error))
+        throw new InputError("Dump object not found.", 404);
+      throw error;
+    }
+    await this.resources.create(project, "database", database);
+    let child;
+    try {
+      const object = await this.infra.s3Client.send(
+        new GetObjectCommand({ Bucket: source, Key: key }),
+      );
+      child = this.start(
+        "pg_restore",
+        [
+          "--no-owner",
+          "--no-acl",
+          "--exit-on-error",
+          "--single-transaction",
+          "--no-password",
+          `--dbname=${database}`,
+        ],
+        { user: project, password },
+      );
+      const done = finished(child, "pg_restore");
       await pipeline(object.Body, child.stdin);
       await done;
     } catch (error) {
-      child.kill?.("SIGKILL");
+      child?.kill?.("SIGKILL");
+      await this.resources.drop(project, "database", database).catch(() => {});
       throw error;
     }
     await this.grantProject(database, project);

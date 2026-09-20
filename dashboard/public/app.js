@@ -180,7 +180,7 @@ function shell() {
     storage: "Storage",
     operations: "Operations",
   };
-  root.innerHTML = `<div class="app-shell"><aside class="sidebar"><a class="brand" href="#overview"><img src="/mark.svg" alt="">Wardroom<small class="brand-credit">by DevX</small></a><div class="workspace-switch">${icon("server")}<div>Development<span>Shared host · Tailnet</span></div><span class="online-dot"></span></div><nav aria-label="Main navigation">${Object.entries(
+  root.innerHTML = `<div class="app-shell"><aside class="sidebar"><a class="brand" href="#overview" data-nav="overview"><img src="/mark.svg" alt="">Wardroom<small class="brand-credit">by DevX</small></a><div class="workspace-switch">${icon("server")}<div>Development<span>Shared host · Tailnet</span></div><span class="online-dot"></span></div><nav aria-label="Main navigation">${Object.entries(
     names,
   )
     .map(
@@ -518,7 +518,10 @@ document.addEventListener("click", async (e) => {
   const el = e.target.closest("button,[data-nav]");
   if (!el || el.disabled) return;
   try {
-    if (el.dataset.nav) await navigate(el.dataset.nav);
+    if (el.dataset.nav) {
+      e.preventDefault();
+      await navigate(el.dataset.nav);
+    }
     else if (el.dataset.db) {
       state.db = el.dataset.db;
       state.table = null;

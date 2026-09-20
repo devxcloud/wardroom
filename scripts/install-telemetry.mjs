@@ -9,8 +9,19 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 loadEnvFile(resolve(root, ".env"));
 const endpoint = process.env.DOCKER_ENDPOINT;
 const context = process.env.DOCKER_CONTEXT || "wardroom";
-if (!/^ssh:\/\/[a-z_][a-z0-9_-]*@[A-Za-z0-9.-]+$/.test(endpoint || ""))
-  throw Error("Expected ssh://user@host without an SSH port override.");
+let parsed;
+try {
+  parsed = new URL(endpoint || "");
+} catch {
+  parsed = null;
+}
+if (
+  !parsed ||
+  parsed.protocol !== "ssh:" ||
+  !parsed.username ||
+  !parsed.hostname
+)
+  throw Error("DOCKER_ENDPOINT must be an ssh://user@host URL.");
 const actual = execFileSync(
   "docker",
   ["context", "inspect", context, "--format", "{{.Endpoints.docker.Host}}"],
@@ -22,27 +33,32 @@ if (!process.env.TELEMETRY_TOKEN || process.env.TELEMETRY_TOKEN.length < 32)
   throw Error("Set TELEMETRY_TOKEN (32+ characters) in .env.");
 if (!/^[A-Za-z0-9.-]+$/.test(process.env.SHARED_INFRA_HOST || ""))
   throw Error("Invalid SHARED_INFRA_HOST.");
-const host = endpoint.slice(6);
-const ssh = (command) =>
-  execFileSync("ssh", ["-o", "ConnectTimeout=10", host, command], {
-    stdio: "inherit",
-  });
+const sshTarget = `${decodeURIComponent(parsed.username)}@${parsed.hostname}`;
+const sshPort = parsed.port;
+const ssh = (command) => {
+  const args = ["-o", "ConnectTimeout=10"];
+  if (sshPort) args.push("-p", sshPort);
+  args.push(sshTarget, command);
+  execFileSync("ssh", args, { stdio: "inherit" });
+};
 ssh(
   "install -d -m 700 .local/lib/shared-infra-telemetry .config/shared-infra-telemetry; mkdir -p .config/systemd/user",
 );
 execFileSync(
   "scp",
   [
+    ...(sshPort ? ["-P", sshPort] : []),
     resolve(root, "telemetry/collector.py"),
-    `${host}:.local/lib/shared-infra-telemetry/collector.py`,
+    `${sshTarget}:.local/lib/shared-infra-telemetry/collector.py`,
   ],
   { stdio: "inherit" },
 );
 execFileSync(
   "scp",
   [
+    ...(sshPort ? ["-P", sshPort] : []),
     resolve(root, "telemetry/shared-infra-telemetry.service"),
-    `${host}:.config/systemd/user/shared-infra-telemetry.service`,
+    `${sshTarget}:.config/systemd/user/shared-infra-telemetry.service`,
   ],
   { stdio: "inherit" },
 );
@@ -60,7 +76,11 @@ try {
   );
   execFileSync(
     "scp",
-    [configFile, `${host}:.config/shared-infra-telemetry/config.json`],
+    [
+      ...(sshPort ? ["-P", sshPort] : []),
+      configFile,
+      `${sshTarget}:.config/shared-infra-telemetry/config.json`,
+    ],
     { stdio: "inherit" },
   );
   ssh("chmod 600 .config/shared-infra-telemetry/config.json");
@@ -79,7 +99,7 @@ try {
 } catch {
   console.log(
     "Telemetry is running for this login session. Boot persistence requires an administrator to run: loginctl enable-linger " +
-      host.split("@")[0],
+      decodeURIComponent(parsed.username),
   );
   process.exitCode = 2;
 }

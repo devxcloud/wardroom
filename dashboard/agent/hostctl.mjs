@@ -171,6 +171,12 @@ export class HostControl {
       await this.run(["/usr/sbin/resize2fs", volume.device], { timeout: 120000 });
     else if (fs.fstype === "xfs" && fs.target)
       await this.run(["/usr/sbin/xfs_growfs", fs.target], { timeout: 120000 });
+    else
+      throw new InputError(
+        fs.fstype
+          ? `Cannot grow filesystem type ${fs.fstype} from Wardroom; grow it on the host after lvextend.`
+          : "Logical volume size is set but no mounted ext or xfs filesystem was found; grow the filesystem on the host before retrying.",
+      );
     return {
       vg,
       lv,

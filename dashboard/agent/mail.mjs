@@ -76,7 +76,9 @@ export class AgentMail {
   async list({ project, query, start = 0, limit = 50 }) {
     const page = Math.min(Math.max(Number(limit) || 50, 1), 50);
     const offset = Math.min(Math.max(Number(start) || 0, 0), 100000);
-    const search = String(query || "").trim() || mailDomain(project);
+    const name = String(project || "").toLowerCase();
+    const search =
+      String(query || "").trim() || `${name}.test OR ${name}.local`;
     const data = await this.request("/api/v1/search", {
       query: { query: search, start: offset, limit: page },
     });

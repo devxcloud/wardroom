@@ -29,7 +29,7 @@ function fakeChild({ stdoutChunks = [], code = 0 } = {}) {
   return child;
 }
 
-function dumpHarness({ dumpCode = 0, owned = [] } = {}) {
+function dumpHarness({ dumpCode = 0, restoreCode = 0, owned = [], secrets } = {}) {
   const puts = [];
   const sends = [];
   const sql = [];
@@ -45,6 +45,15 @@ function dumpHarness({ dumpCode = 0, owned = [] } = {}) {
         send: async (command) => {
           const input = command.input;
           sends.push({ name: command.constructor.name, ...input });
+          if (command.constructor.name === "HeadObjectCommand") {
+            if (!objects.has(input.Key)) {
+              const error = new Error("NotFound");
+              error.name = "NotFound";
+              error.$metadata = { httpStatusCode: 404 };
+              throw error;
+            }
+            return {};
+          }
           if (command.constructor.name === "GetObjectCommand")
             return { Body: Readable.from([objects.get(input.Key) || Buffer.from("DUMP")]) };
           if (command.constructor.name === "CopyObjectCommand") {
@@ -72,6 +81,13 @@ function dumpHarness({ dumpCode = 0, owned = [] } = {}) {
       },
     },
     {
+      secrets:
+        secrets === undefined
+          ? {
+              get: async (project, name) =>
+                name === `db:${project}` ? "stored-password-12" : null,
+            }
+          : secrets,
       owned: async () => ({ name: "alpha" }),
       project: async () => ({
         name: "alpha",
@@ -81,22 +97,31 @@ function dumpHarness({ dumpCode = 0, owned = [] } = {}) {
       list: async () => [
         { kind: "bucket", name: "alpha" },
         { kind: "bucket", name: "alpha-test" },
-        ...created.map((name) => ({ kind: "bucket", name })),
+        ...created
+          .filter((item) => item.kind === "bucket")
+          .map((item) => ({ kind: "bucket", name: item.name })),
       ],
-      create: async (_project, kind, name) => {
-        created.push(name);
+      create: async (_project, kind, name, _password, options = {}) => {
+        created.push({ kind, name, attachIam: options.attachIam });
         return { kind, name };
+      },
+      drop: async (_project, kind, name) => {
+        const index = created.findIndex(
+          (item) => item.kind === kind && item.name === name,
+        );
+        if (index >= 0) created.splice(index, 1);
+        return { kind, name, removed: true };
       },
     },
     {
-      spawnProcess: (command, args) => {
-        spawned.push({ command, args });
+      spawnProcess: (command, args, options) => {
+        spawned.push({ command, args, env: options?.env });
         if (command === "pg_dump")
           return fakeChild({
             stdoutChunks: [Buffer.from("DUMP")],
             code: dumpCode,
           });
-        return fakeChild();
+        return fakeChild({ code: restoreCode });
       },
       putObjectStream: async (_client, params) => {
         const chunks = [];
@@ -129,7 +154,11 @@ test("database backup publishes the final key only after pg_dump exits 0", async
     ],
   });
   const backup = await dump.backup({ project: "alpha", database: "alpha" });
-  assert.deepEqual(created, ["alpha-backups"]);
+  assert.deepEqual(
+    created.map((item) => item.name),
+    ["alpha-backups"],
+  );
+  assert.equal(created[0].attachIam, false);
   assert.equal(backup.bucket, "alpha-backups");
   assert.match(puts[0].key, /^backups\/\.incomplete\/alpha-.*\.dump$/);
   assert.match(backup.key, /^backups\/alpha-.*\.dump$/);
@@ -140,14 +169,19 @@ test("database backup publishes the final key only after pg_dump exits 0", async
     sends.find((s) => s.name === "CopyObjectCommand").Key,
     backup.key,
   );
+  assert.equal(spawned[0].env.PGUSER, "postgres");
+  assert.equal("DASHBOARD_PASSWORD" in spawned[0].env, false);
   const restored = await dump.restore({
     project: "alpha",
     database: "alpha_snap",
     key: backup.key,
   });
   assert.equal(restored.restored, true);
-  const restoreArgs = spawned.find((s) => s.command === "pg_restore")?.args;
-  assert.ok(restoreArgs?.includes("--no-owner"), JSON.stringify(spawned));
+  assert.equal(restored.bucket, "alpha-backups");
+  const restore = spawned.find((s) => s.command === "pg_restore");
+  assert.ok(restore?.args?.includes("--no-owner"), JSON.stringify(spawned));
+  assert.equal(restore.env.PGUSER, "alpha");
+  assert.equal(restore.env.PGPASSWORD, "stored-password-12");
   const statements = sql.map((item) =>
     typeof item === "string" ? item : item?.text,
   );
@@ -175,7 +209,7 @@ test("a failed pg_dump leaves zero objects in the bucket", async () => {
 });
 
 test("restore refuses incomplete dump keys", async () => {
-  const { dump, spawned } = dumpHarness();
+  const { dump, spawned, created } = dumpHarness();
   await assert.rejects(
     dump.restore({
       project: "alpha",
@@ -183,6 +217,63 @@ test("restore refuses incomplete dump keys", async () => {
       key: "backups/.incomplete/alpha.dump",
     }),
     /Incomplete dump/,
+  );
+  assert.equal(
+    spawned.some((s) => s.command === "pg_restore"),
+    false,
+  );
+  assert.equal(
+    created.some((item) => item.name === "alpha_snap"),
+    false,
+  );
+});
+
+test("restore defaults to the backups bucket and does not create a database for a missing object", async () => {
+  const { dump, created, sends } = dumpHarness();
+  await assert.rejects(
+    dump.restore({
+      project: "alpha",
+      database: "alpha_snap",
+      key: "backups/missing.dump",
+    }),
+    /not found/,
+  );
+  assert.equal(
+    created.some((item) => item.name === "alpha_snap"),
+    false,
+  );
+  assert.equal(
+    sends.some((item) => item.name === "HeadObjectCommand"),
+    true,
+  );
+});
+
+test("a failed pg_restore drops the extra database it created", async () => {
+  const { dump, created } = dumpHarness({ restoreCode: 1 });
+  const backup = await dump.backup({ project: "alpha", database: "alpha" });
+  await assert.rejects(
+    dump.restore({
+      project: "alpha",
+      database: "alpha_snap",
+      key: backup.key,
+    }),
+    /pg_restore failed/,
+  );
+  assert.equal(
+    created.some((item) => item.name === "alpha_snap"),
+    false,
+  );
+});
+
+test("restore without a stored project password does not spawn pg_restore", async () => {
+  const { dump, spawned } = dumpHarness({ secrets: null });
+  await assert.rejects(
+    dump.restore({
+      project: "alpha",
+      database: "alpha_snap",
+      key: "backups/alpha.dump",
+    }),
+    /password/,
   );
   assert.equal(
     spawned.some((s) => s.command === "pg_restore"),

@@ -17,7 +17,7 @@ Mutations need `operationId` (UUID). Destructive tools also need `destructive: t
 | Tool | Notes |
 | --- | --- |
 | `database_list` | Owned DBs, including extras the owner created |
-| `database_create` | Extra registered DB + pgvector, owner = project |
+| `database_create` | Extra registered DB + pgvector, owner = project. Name must start with `{project}_` |
 | `database_drop` | Destructive. Not base DBs |
 | `user_list` | No passwords |
 | `user_create` | Extra login, `NOCREATEDB` |
@@ -25,12 +25,12 @@ Mutations need `operationId` (UUID). Destructive tools also need `destructive: t
 | `user_grant` | `read` or `write` on public schema |
 | `user_createdb` | `ALTER ROLE {project} CREATEDB` only. No admin password |
 | `user_set_createdb` | `{ enabled }` grant or revoke CREATEDB on the owner |
-| `user_password_rotate` | Destructive. Omit `password` to generate and store; never returned |
+| `user_password_rotate` | Destructive. Omit `password` to generate and store; never returned. Extra logins included in `includeSecrets` |
 | `table_list` / `table_rows` | Rows use project login; password optional if stored |
 | `sql_query` | Read-only SELECT/WITH/EXPLAIN/SHOW. Safe token. 8s |
 | `sql_execute` | Destructive. Project login only. 8s limit |
 | `database_backup` | Custom-format dump to `{bucket}-backups` by default |
-| `database_restore` | Destructive. New extra database from a dump object |
+| `database_restore` | Destructive. New extra `{project}_…` database. Defaults to `{bucket}-backups`. `pg_restore` as the project login |
 
 ## Redis (relative keys)
 
@@ -61,10 +61,10 @@ Mutations need `operationId` (UUID). Destructive tools also need `destructive: t
 | --- | --- |
 | `service_health` | Shared service status |
 | `system_metrics` | CPU/memory/filesystem/LVM/I/O/network. Project tokens omit other containers |
-| `lvm_list` / `lvm_extend` | Admin. Grow-only; `sizeGiB` absolute GiB |
-| `container_list` / `container_logs` / `container_action` | Admin. Name or Compose service. No exec |
-| `volume_list` / `volume_create` / `volume_remove` | Admin. List includes `sizeBytes` when available |
-| `network_list` / `network_create` / `network_remove` | Admin. Built-in + `shared-infra_*` protected |
+| `lvm_list` / `lvm_extend` | Admin. `lvm_extend` is destructive. Grow-only; `sizeGiB` absolute GiB |
+| `container_list` / `container_logs` / `container_action` | Admin. Name or Compose service. No exec. `container_action` is destructive |
+| `volume_list` / `volume_create` / `volume_remove` | Admin. List includes `sizeBytes`. `volume_remove` is destructive |
+| `network_list` / `network_create` / `network_remove` | Admin. Built-in + `shared-infra_*` protected. `network_remove` is destructive |
 | `operation_history` | Sanitized mutation outcomes |
 | `fault_apply` | Admin destructive. Fixed toxiproxy presets |
 | `mock_list` / `mock_create` / `mock_delete` | Project-owned WireMock paths |
@@ -75,4 +75,4 @@ When changing the Wardroom stack itself, use `make` / `scripts/compose.sh` so `D
 
 ## Control plane (do not stop/delete)
 
-`dashboard`, `gateway`, `agent-broker`, `docker-proxy`. Wardroom data volumes `postgres-data`, `redis-data`, `minio-data`, `redisinsight-data` (and `shared-infra_*` names) cannot be removed.
+`dashboard`, `gateway`, `agent-broker`, `host-broker`, `docker-proxy`. Wardroom data volumes `postgres-data`, `redis-data`, `minio-data`, `redisinsight-data` (and `shared-infra_*` names) cannot be removed.

@@ -17,6 +17,8 @@ const size = (v) => {
 };
 const meter = (value, cls = "") =>
   `<svg class="usage-meter ${cls}" viewBox="0 0 100 6" preserveAspectRatio="none" role="img" aria-label="${percent(value)} used"><rect width="100" height="6" rx="3" class="meter-track"/><rect width="${finite(value) ? Math.min(100, Math.max(0, value)) : 0}" height="6" rx="3" class="meter-fill ${value > 85 ? "warning" : ""}"/></svg>`;
+const controlPlaneName =
+  /^shared-infra-(dashboard|gateway|agent-broker|host-broker|docker-proxy)(?:-\d+)?$/;
 
 export function mountContainers({
   main,
@@ -317,9 +319,11 @@ export function mountContainers({
             .join(
               "",
             )}</dl><p class="subtle">Snapshot from ${new Date(data.receivedAt).toLocaleTimeString()}. Wardroom control-plane containers cannot be stopped or deleted.</p></div><div class="dialog-footer container-actions"><button class="button" data-action="close">Done</button>${
-              c.state === "running"
-                ? `<button class="button" data-container-action="stop" data-container-name="${escape(c.name)}">Stop</button><button class="button" data-container-action="restart" data-container-name="${escape(c.name)}">Restart</button>`
-                : `<button class="button" data-container-action="start" data-container-name="${escape(c.name)}">Start</button><button class="button danger" data-container-action="remove" data-container-name="${escape(c.name)}">Delete</button>`
+              controlPlaneName.test(String(c.name || "").replace(/^\//, ""))
+                ? ""
+                : c.state === "running"
+                  ? `<button class="button" data-container-action="stop" data-container-name="${escape(c.name)}">Stop</button><button class="button" data-container-action="restart" data-container-name="${escape(c.name)}">Restart</button>`
+                  : `<button class="button" data-container-action="start" data-container-name="${escape(c.name)}">Start</button><button class="button danger" data-container-action="remove" data-container-name="${escape(c.name)}">Delete</button>`
             }</div>`,
         );
       }

@@ -93,6 +93,11 @@ test("mobile overview and keyboard-accessible form", async ({ page }) => {
     path: "test-results/overview-mobile.png",
     fullPage: true,
   });
+  await expect(
+    page.getByRole("navigation", { name: "Main navigation" }).getByRole("button", {
+      name: "Operations",
+    }),
+  ).toBeInViewport();
   await page.getByRole("button", { name: "New project", exact: true }).click();
   await expect(page.getByLabel("Project name", { exact: true })).toBeFocused();
   await page.screenshot({

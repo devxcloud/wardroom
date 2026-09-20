@@ -70,11 +70,11 @@ Full catalog: [references/tools.md](references/tools.md).
 
 **Extra databases.** Project owner logins have `CREATEDB`. Grant or revoke with `user_set_createdb` `{ enabled }` (no admin SQL). `user_createdb` still grants. Create a registered extra DB with `database_create`. `database_list` includes `createdAt`, `ageSeconds`, and `lastConnected`. List/drop include DBs the owner created. Extra logins stay without `CREATEDB`.
 
-**SQL.** `sql_query` is read-only SELECT/WITH/EXPLAIN/SHOW as the project login; safe token; 8s; 100 rows. `sql_execute` is destructive, same login, may write. Password may be omitted after provision or `user_password_rotate` without a password argument (server generates and stores it; read once via `project_connections` `includeSecrets`). Never paste the database password into chat. Never `SET ROLE` or admin SQL.
+**SQL.** `sql_query` is read-only SELECT/WITH/EXPLAIN/SHOW as the project login; safe token; 8s; 100 rows. `sql_execute` is destructive, same login, may write. Password may be omitted after provision or `user_password_rotate` without a password argument (server generates and stores it). Read stored owner and extra-login passwords once via `project_connections` `includeSecrets` on a **destructive MCP token**, not from dashboard chat. Never paste the database password into chat. Never `SET ROLE` or admin SQL.
 
 **Mail.** Shared Mailpit inbox. `mail_list` / `mail_search` / `mail_get` / `mail_delete` only see messages whose From or To/Cc/Bcc domain is exactly `{project}.test` or `{project}.local`. Set app `From` (and test recipients) to `MAIL_DOMAIN`. Names `test`, `local`, and `mail` are reserved. Never delete the whole inbox.
 
-**Backup.** `database_backup` dumps an owned database to `{bucket}-backups` (created if missing), key `backups/{database}-{timestamp}.dump`. That bucket is not on the project's MinIO service-account policy. `database_restore` creates a **new** extra database from that object (destructive) and reassigns non-extension objects to the project login. Snapshot before a test suite that truncates.
+**Backup.** `database_backup` dumps an owned database to `{bucket}-backups` (created if missing), key `backups/{database}-{timestamp}.dump`. That bucket is not on the project's MinIO service-account policy. `database_restore` (destructive) creates a **new** extra database named `{project}_…` from that same backups bucket by default and runs `pg_restore` as the project login. Store the owner password first (`user_password_rotate` with no password, or provision). Snapshot before a test suite that truncates.
 
 **Redis.** Keys are **relative**. The server prefixes `{project}:`. Do not send the prefix. Do not `FLUSHALL`.
 
@@ -82,7 +82,7 @@ Full catalog: [references/tools.md](references/tools.md).
 
 **Host metrics vs LVM.** `system_metrics` `storage[].availableBytes` is filesystem free on a mount. `lvm.volumeGroups[].freeBytes` (or `lvm_list`) is unallocated VG space. Do not treat them as the same. Grow with `lvm_extend`: `sizeGiB` is the new **absolute** size in GiB (1024³), never a shrink. Example: `vg=ubuntu-vg`, `lv=ubuntu-lv`, `sizeGiB=200`.
 
-**Docker (admin).** Address containers by **name** (from `container_list` or the dashboard Containers page), not only Compose service ids. `container_action` start/stop/restart/remove. Control plane (`dashboard`, `gateway`, `agent-broker`, `docker-proxy`) cannot be stopped or deleted. Wardroom services cannot be deleted. Volumes and networks: list/create/remove; Wardroom data volumes and `bridge`/`host`/`none` plus `shared-infra_*` networks are protected. Volume list includes `sizeBytes` when Docker reports usage.
+**Docker (admin).** Address containers by **name** (from `container_list` or the dashboard Containers page), not only Compose service ids. `container_action` start/stop/restart/remove is destructive. Control plane (`dashboard`, `gateway`, `agent-broker`, `host-broker`, `docker-proxy`) cannot be stopped or deleted. Wardroom services cannot be deleted. `volume_remove`, `network_remove`, and `lvm_extend` are destructive. Volumes and networks: list/create/remove; Wardroom data volumes and `bridge`/`host`/`none` plus `shared-infra_*` networks are protected. Volume list includes `sizeBytes` when Docker reports usage.
 
 ## Limits
 

@@ -69,3 +69,21 @@ test("LVM extend grows then resizes ext4 and refuses shrink or overcommit", asyn
   assert.ok(calls.some((argv) => argv[0] === "/usr/sbin/resize2fs"));
   assert.ok(!calls.some((argv) => argv.some((a) => String(a).includes(";"))));
 });
+
+test("LVM extend does not report grown when the filesystem cannot be resized", async () => {
+  const calls = [];
+  const run = async (argv) => {
+    calls.push(argv);
+    if (argv[0].endsWith("vgs")) return { stdout: vgs };
+    if (argv[0].endsWith("lvs")) return { stdout: lvs };
+    if (argv[0].endsWith("findmnt")) return { stdout: "btrfs /data\n" };
+    return { stdout: "" };
+  };
+  const host = new HostControl({ run });
+  await assert.rejects(
+    host.extend({ vg: "ubuntu-vg", lv: "ubuntu-lv", sizeGiB: 200 }),
+    /filesystem type btrfs/,
+  );
+  assert.ok(calls.some((argv) => argv[0] === "/usr/sbin/lvextend"));
+  assert.ok(!calls.some((argv) => argv[0] === "/usr/sbin/resize2fs"));
+});

@@ -8,6 +8,7 @@ const controlPlane = new Set([
   "dashboard",
   "gateway",
   "agent-broker",
+  "host-broker",
   "docker-proxy",
 ]);
 const wardroomServices = new Set([

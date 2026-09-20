@@ -16,7 +16,8 @@ set -o noclobber
 # shellcheck disable=SC2016
 if ! "${compose[@]}" exec -T -e "BACKUP_DATABASE=$database" postgres sh -eu -c \
   'pg_dump -U "$POSTGRES_USER" --format=custom "$BACKUP_DATABASE"' >"$backup_file"; then
-  echo "Backup failed. Do not restore the incomplete file: $backup_file" >&2
+  rm -f "$backup_file"
+  echo "Backup failed. Incomplete dump removed." >&2
   exit 1
 fi
 echo "Backup saved: $backup_file"
