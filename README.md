@@ -238,9 +238,11 @@ DASHBOARD_URL=http://<devbox-hostname> npm run test:ui
 DASHBOARD_URL=http://<devbox-hostname> node scripts/capture-screenshots.mjs
 ```
 
+GitHub Actions runs `make test` on push and pull requests. That job does not start services, load `.env`, or talk to a live host. Browser and integration tests stay local against your running stack.
+
 The test suite covers Compose/privacy contracts, provisioning rules, authentication, telemetry validation, the tool allowlist, the fixed fault API, Python collector parsing, ShellCheck, and live browser journeys. Screenshot generation intercepts data APIs with sanitized fixtures, so committed images never reveal the active environment.
 
-See [operations](docs/operations.md) for metric definitions, limits, upgrades, diagnostics, backups, and recovery.
+See [operations](docs/operations.md) for metric definitions, limits, upgrades, diagnostics, backups, and recovery. See [CONTRIBUTING](CONTRIBUTING.md) for how to run checks and [SECURITY](SECURITY.md) to report a vulnerability.
 
 ## License
 
