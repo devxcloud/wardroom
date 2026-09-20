@@ -1,6 +1,6 @@
 # Agent operations
 
-Wardroom's optional MCP server is for trusted development agents. It shares one validated tool catalog with the built-in infrastructure chat while remaining independently usable. Use the setup commands in the [README](../README.md#coding-agent-tools-optional-mcp).
+Wardroom's optional MCP server is for trusted development agents. It shares one validated tool catalog with the built-in infrastructure chat while remaining independently usable. Use the setup commands in the [README](../README.md#coding-agent-tools-optional-mcp). Copy `skills/wardroom` into Claude Code or Codex with `make skill-install` so the agent knows the catalog and limits.
 
 ## Access and credentials
 

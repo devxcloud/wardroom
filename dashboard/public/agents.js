@@ -47,7 +47,7 @@ export function clientSetup(client, url) {
   if (client === "codex")
     return {
       code: `codex mcp add wardroom --url ${endpoint} --bearer-token-env-var WARDROOM_MCP_TOKEN`,
-      note: "Run in your terminal. Codex reads WARDROOM_MCP_TOKEN from its launch environment; restart the client after configuration.",
+      note: "Run in your terminal. Codex reads WARDROOM_MCP_TOKEN from its launch environment; restart the client after configuration. From the Wardroom checkout, run make skill-install so Codex loads skills/wardroom.",
     };
   if (client === "claude")
     return {
@@ -64,7 +64,7 @@ export function clientSetup(client, url) {
         null,
         2,
       ),
-      note: "Merge into your project's .mcp.json. Claude Code expands the environment variable when it starts. Use /mcp to check the connection.",
+      note: "Merge into your project's .mcp.json. Claude Code expands the environment variable when it starts. Use /mcp to check the connection. From the Wardroom checkout, run make skill-install so Claude loads skills/wardroom.",
     };
   if (client === "grok")
     return {

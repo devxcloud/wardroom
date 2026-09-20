@@ -170,6 +170,14 @@ Wardroom can provision and operate development resources for a coding agent—no
 
 Open **AI & MCP** in the main menu (direct link: `/#ai-mcp`) to create a project/admin token, select its expiry and destructive permissions, and copy installation commands or configuration for Claude Code, Codex, Grok Build or another MCP client. Save the one-time token privately. The dedicated page lists token scope, expiry and last authenticated use, and lets you revoke access. Inactive tokens are hidden until requested. Token management requires the dashboard login; MCP agents cannot issue tokens.
 
+Install the portable skill so Claude Code or Codex know the catalog (provision, SQL, Redis/MinIO, LVM grow, Docker containers/volumes/networks) without guessing:
+
+```sh
+make skill-install
+```
+
+That copies `skills/wardroom` into `~/.claude/skills/wardroom`, `~/.codex/skills/wardroom`, and `~/.agents/skills/wardroom`. Restart the client after installing. The skill does not contain tokens or hostnames.
+
 ```sh
 # In private .env, set MCP_ALLOWED_HOSTS to the devbox IP/DNS names
 # you use to connect (comma-separated, no scheme/port).

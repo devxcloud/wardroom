@@ -1,7 +1,7 @@
 DOCKER_COMPOSE = bash scripts/compose.sh
 
 .PHONY: context config up down ps logs provision smoke test doctor backup restore connections telemetry lab-up lab-down api-up api-down
-.PHONY: mcp-up mcp-down agent-token agent-tokens agent-revoke agent-history
+.PHONY: mcp-up mcp-down agent-token agent-tokens agent-revoke agent-history skill-install
 
 mcp-up:
 	node scripts/ensure-private-config.mjs
@@ -21,6 +21,13 @@ agent-revoke:
 
 agent-history:
 	node scripts/agent-token.mjs history
+
+skill-install:
+	mkdir -p "$(HOME)/.claude/skills/wardroom" "$(HOME)/.codex/skills/wardroom" "$(HOME)/.agents/skills/wardroom"
+	cp -R skills/wardroom/. "$(HOME)/.claude/skills/wardroom/"
+	cp -R skills/wardroom/. "$(HOME)/.codex/skills/wardroom/"
+	cp -R skills/wardroom/. "$(HOME)/.agents/skills/wardroom/"
+	@echo "Installed skills/wardroom for Claude Code, Codex, and agents. Restart those clients."
 
 context:
 	./scripts/setup-context.sh
