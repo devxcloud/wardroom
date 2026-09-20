@@ -7,6 +7,7 @@ export function configFrom(env = process.env) {
     password: env.DASHBOARD_PASSWORD,
     sessionSecret: env.DASHBOARD_SESSION_SECRET,
     telemetryToken: env.TELEMETRY_TOKEN,
+    aiSettingsKey: env.AI_SETTINGS_KEY,
     pg: {
       host: env.PGHOST || host,
       port: Number(env.PGPORT || 5434),

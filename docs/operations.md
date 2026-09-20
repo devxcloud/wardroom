@@ -69,6 +69,10 @@ Run `API_WORKBENCH_TEST=1 DASHBOARD_URL=http://devbox npm run test:ui` to includ
 
 ## Credentials and registry
 
+The Compose wrapper generates `AI_SETTINGS_KEY` in ignored `.env`. Keep it stable: Wardroom encrypts the optional model-provider API key with it. Provider settings are workspace-wide and editable only through an authenticated dashboard session. Changing the endpoint does not forward the old key to the new host. HTTP endpoints require explicit acknowledgement; use HTTPS or a private development network. Prompts and selected infrastructure results leave Wardroom for the configured provider.
+
+Dashboard AI conversations are memory-only and expire after 30 minutes. Their internal short-lived agent tokens stay out of the MCP token list but retain normal operation audit records. Stopping a response prevents later dispatch; inspect operation history if a mutation was already running. Provider failures never trigger a fallback or automatic mutation retry.
+
 The dashboard is a trusted development admin interface. Its server uses the PostgreSQL administrator and shared Redis/MinIO credentials. The browser never receives those credentials; generated connection settings contain placeholders. Copy the correct values from local ignored environment files and URL-encode passwords inside database/Redis URLs.
 
 Change `DASHBOARD_PASSWORD` in `.env` and run `make up` to rotate dashboard access; restarting invalidates sessions. PostgreSQL's `POSTGRES_PASSWORD` only initializes an empty cluster: changing `.env` alone does not rotate an existing database password. Project provisioning intentionally does not rotate passwords.

@@ -58,17 +58,25 @@ export class AgentStore {
       PRIMARY KEY(token_id,id));
       ALTER TABLE shared_infra.agent_operations ADD COLUMN IF NOT EXISTS outcome jsonb;
       ALTER TABLE shared_infra.agent_tokens ADD COLUMN IF NOT EXISTS last_used_at timestamptz;
+      ALTER TABLE shared_infra.agent_tokens ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'mcp';
       CREATE TABLE IF NOT EXISTS shared_infra.agent_resources (
       kind text NOT NULL, name text NOT NULL, project text NOT NULL REFERENCES shared_infra.projects(name),
       status text NOT NULL DEFAULT 'ready', PRIMARY KEY(kind,name));`);
   }
   async issue(input) {
     const value = tokenInput(input);
+    return this.issueValue(value, "mcp", `${value.days} days`);
+  }
+  async issueChat(input) {
+    const value = tokenInput({ ...input, days: 1, label: "Dashboard AI" });
+    return this.issueValue(value, "chat", "30 minutes");
+  }
+  async issueValue(value, source, lifetime) {
     const token = `wr_${randomBytes(32).toString("base64url")}`;
     const id = randomUUID();
     const { rows } = await this.pool.query(
       `INSERT INTO shared_infra.agent_tokens
-      (id,label,token_hash,scope,project,destructive,expires_at) VALUES ($1,$2,$3,$4,$5,$6,now()+$7*interval '1 day')
+      (id,label,token_hash,scope,project,destructive,expires_at,source) VALUES ($1,$2,$3,$4,$5,$6,now()+$7::interval,$8)
       RETURNING id,label,scope,project,destructive,expires_at`,
       [
         id,
@@ -77,7 +85,8 @@ export class AgentStore {
         value.scope,
         value.project ?? null,
         value.destructive,
-        value.days,
+        lifetime,
+        source,
       ],
     );
     return { ...rows[0], token };
@@ -97,7 +106,7 @@ export class AgentStore {
   async list() {
     return (
       await this.pool.query(
-        "SELECT id,label,scope,project,destructive,created_at,expires_at,revoked_at,last_used_at FROM shared_infra.agent_tokens ORDER BY created_at DESC LIMIT 100",
+        "SELECT id,label,scope,project,destructive,created_at,expires_at,revoked_at,last_used_at FROM shared_infra.agent_tokens WHERE source='mcp' ORDER BY created_at DESC LIMIT 100",
       )
     ).rows;
   }

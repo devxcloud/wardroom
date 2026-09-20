@@ -13,6 +13,12 @@ import { configFrom } from "./config.mjs";
 import { InputError, connectionText } from "./domain.mjs";
 import { AgentStore } from "./agent/store.mjs";
 import { tokenInput, operationSchema } from "./agent/policy.mjs";
+import { handleAiRequest } from "./ai/routes.mjs";
+import { AgentResources } from "./agent/resources.mjs";
+import { AgentLab } from "./agent/lab.mjs";
+import { createCatalog } from "./agent/catalog.mjs";
+import { AiSettings } from "./ai/settings.mjs";
+import { AiConversations } from "./ai/conversations.mjs";
 
 const publicDir = fileURLToPath(new URL("./public/", import.meta.url));
 const fontDir = fileURLToPath(
@@ -38,20 +44,21 @@ export function createApp(infra, config) {
   const attempts = new Map();
   const signature = (value) =>
     createHmac("sha256", secret).update(value).digest("hex");
-  const validSession = (req) => {
+  const sessionToken = (req) => {
     const token = /(?:^|; )infra_session=([^;]+)/.exec(
       req.headers.cookie || "",
     )?.[1];
-    if (!token) return false;
+    if (!token) return null;
     const [expires, nonce, sig] = token.split(".");
     const expected = signature(`${expires}.${nonce}`);
-    return (
-      Number(expires) > Date.now() &&
+    return Number(expires) > Date.now() &&
       typeof sig === "string" &&
       sig.length === expected.length &&
       timingSafeEqual(Buffer.from(sig), Buffer.from(expected))
-    );
+      ? token
+      : null;
   };
+  const validSession = (req) => Boolean(sessionToken(req));
   const json = (res, status, data, headers = {}) => {
     res.writeHead(status, { "Content-Type": "application/json", ...headers });
     res.end(JSON.stringify(data));
@@ -146,9 +153,12 @@ export function createApp(infra, config) {
         );
       }
       if (path.startsWith("/api/")) {
-        if (!validSession(req))
+        const activeSession = sessionToken(req);
+        if (!activeSession)
           throw new InputError("Sign in to your infrastructure.", 401);
-        if (req.method === "POST" && path === "/api/logout")
+        const owner = createHash("sha256").update(activeSession).digest("hex");
+        if (req.method === "POST" && path === "/api/logout") {
+          await infra.ai?.conversations.closeOwner(owner);
           return json(
             res,
             200,
@@ -158,6 +168,20 @@ export function createApp(infra, config) {
                 "infra_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0",
             },
           );
+        }
+        if (
+          infra.ai &&
+          (await handleAiRequest({
+            req,
+            res,
+            path,
+            owner,
+            readBody: body,
+            json,
+            ai: infra.ai,
+          }))
+        )
+          return;
         if (req.method === "POST" && path === "/api/projects")
           return json(res, 201, await infra.provision(await body(req)));
         if (path === "/api/agent-tokens" && req.method === "POST")
@@ -286,6 +310,17 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     await infra.initialize();
     infra.agents = new AgentStore(infra.pool, config.sessionSecret);
     await infra.agents.initialize();
+    const settings = new AiSettings(infra.pool, config.aiSettingsKey);
+    await settings.initialize();
+    const lab = new AgentLab(infra, new AgentResources(infra));
+    infra.ai = {
+      settings,
+      conversations: new AiConversations({
+        settings,
+        store: infra.agents,
+        catalog: createCatalog(infra, infra.agents, { lab }),
+      }),
+    };
     const server = createApp(infra, config);
     server.requestTimeout = 30_000;
     server.listen(config.port, config.bind, () =>
@@ -296,6 +331,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     for (const signal of ["SIGTERM", "SIGINT"])
       process.on(signal, () => {
         server.close(async () => {
+          infra.ai.conversations.dispose();
           await infra.close();
           process.exit(0);
         });

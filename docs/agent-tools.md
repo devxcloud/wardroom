@@ -1,10 +1,10 @@
 # Agent operations
 
-Wardroom's optional MCP server is for trusted development agents. It shares one validated tool catalog with future integrations; a chat UI and model-provider connections are not implemented. Use the setup commands in the [README](../README.md#coding-agent-tools-optional-mcp).
+Wardroom's optional MCP server is for trusted development agents. It shares one validated tool catalog with the built-in infrastructure chat while remaining independently usable. Use the setup commands in the [README](../README.md#coding-agent-tools-optional-mcp).
 
 ## Access and credentials
 
-The main menu's **AI & MCP** page (`/#ai-mcp`) provides client tabs with copyable installation commands, token environment setup, optional manual configuration, and endpoint copying. The old `/#tools/ai-mcp` link redirects here. Choose **New token** to open the creation form; scope and destructive access are separate choices. Tokens appear only once for copy/download and are never stored in browser local/session storage. A downloaded credential file is sensitive: move it outside repositories and restrict its filesystem permissions. Active tokens appear first; **Show inactive tokens** reveals revoked and expired entries within the newest 100 records. Each token shows scope, expiry, last successful authentication and revocation controls, including on mobile. Last-used timestamps do not imply that an operation completed.
+The main menu's **AI & MCP → MCP access** page (`/#ai-mcp`) provides client tabs with copyable installation commands, token environment setup, optional manual configuration, and endpoint copying. Chat and provider settings live in sibling subpages. The old `/#tools/ai-mcp` link redirects here. Choose **New token** to open the creation form; scope and destructive access are separate choices. Tokens appear only once for copy/download and are never stored in browser local/session storage. A downloaded credential file is sensitive: move it outside repositories and restrict its filesystem permissions. Active tokens appear first; **Show inactive tokens** reveals revoked and expired entries within the newest 100 records. Each token shows scope, expiry, last successful authentication and revocation controls, including on mobile. Last-used timestamps do not imply that an operation completed.
 
 Claude Code's example uses environment-variable expansion in `.mcp.json` ([official documentation](https://code.claude.com/docs/en/mcp#environment-variable-expansion-in-mcp-json)); Codex uses `--bearer-token-env-var`. Grok Build's CLI example uses user scope and passes an environment-expanded authorization header: the resolved secret is saved in its private user configuration and briefly appears in the command's arguments. Do not use that example with project scope. Other clients should use a private secret field; variable interpolation syntax is client-specific.
 
@@ -18,15 +18,15 @@ Project scope is enforced by these tools, not by a separate infrastructure tenan
 
 ## Tool boundaries
 
-| Area | Supported behavior | Deliberate limits |
-| --- | --- | --- |
-| Projects | Provision, inspect, connection templates, retire | Registry-owned resources only; system projects protected |
-| PostgreSQL | Extra databases/users, fixed grants, password rotation, table preview, SQL | Actual project login for SQL/previews; bounded output and timeouts; SQL requires destructive opt-in |
-| Redis | Scan/get/set/delete relative keys, clear namespace | Project prefix always applied; no arbitrary commands or global flush |
-| S3 | Owned bucket lifecycle, object list/get/put/delete | Bounded pages/bodies; explicit purge; versioned bucket deletion refused |
-| Diagnostics | Service health and host metrics | Project responses exclude unrestricted container inventory |
-| Test lab | Project-namespaced static mocks, fixed fault presets | No raw WireMock mappings or arbitrary proxy destinations |
-| Containers | List/logs/start/stop/restart | Admin only; fixed service allowlist and Compose-label checks; no shell, exec, image creation, volumes or control-plane actions |
+| Area        | Supported behavior                                                         | Deliberate limits                                                                                                              |
+| ----------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Projects    | Provision, inspect, connection templates, retire                           | Registry-owned resources only; system projects protected                                                                       |
+| PostgreSQL  | Extra databases/users, fixed grants, password rotation, table preview, SQL | Actual project login for SQL/previews; bounded output and timeouts; SQL requires destructive opt-in                            |
+| Redis       | Scan/get/set/delete relative keys, clear namespace                         | Project prefix always applied; no arbitrary commands or global flush                                                           |
+| S3          | Owned bucket lifecycle, object list/get/put/delete                         | Bounded pages/bodies; explicit purge; versioned bucket deletion refused                                                        |
+| Diagnostics | Service health and host metrics                                            | Project responses exclude unrestricted container inventory                                                                     |
+| Test lab    | Project-namespaced static mocks, fixed fault presets                       | No raw WireMock mappings or arbitrary proxy destinations                                                                       |
+| Containers  | List/logs/start/stop/restart                                               | Admin only; fixed service allowlist and Compose-label checks; no shell, exec, image creation, volumes or control-plane actions |
 
 Normal exact-key/object writes are available without destructive opt-in. Broader operations such as SQL, retirement, namespace clearing, password rotation and container actions require it. The MCP discovery response reflects the caller's permissions; dispatch checks them again.
 

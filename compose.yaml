@@ -159,23 +159,25 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    environment: &wardroom-environment
-      DASHBOARD_BIND: 0.0.0.0
-      DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:?set DASHBOARD_PASSWORD in .env}
-      DASHBOARD_SESSION_SECRET: ${DASHBOARD_SESSION_SECRET:?run scripts/ensure-private-config.mjs first}
-      TELEMETRY_TOKEN: ${TELEMETRY_TOKEN:?set TELEMETRY_TOKEN in .env}
-      SHARED_INFRA_HOST: ${SHARED_INFRA_HOST:?set SHARED_INFRA_HOST in .env}
-      PGHOST: postgres
-      PGPORT: "5432"
-      POSTGRES_ADMIN_USER: ${POSTGRES_ADMIN_USER}
-      POSTGRES_ADMIN_PASSWORD: ${POSTGRES_ADMIN_PASSWORD}
-      REDIS_HOST: redis
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
-      MINIO_HOST: minio
-      MINIO_PORT: "9000"
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-      MAILPIT_URL: http://mailpit:8025
+    environment:
+      <<: &wardroom-environment
+        DASHBOARD_BIND: 0.0.0.0
+        DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:?set DASHBOARD_PASSWORD in .env}
+        DASHBOARD_SESSION_SECRET: ${DASHBOARD_SESSION_SECRET:?run scripts/ensure-private-config.mjs first}
+        TELEMETRY_TOKEN: ${TELEMETRY_TOKEN:?set TELEMETRY_TOKEN in .env}
+        SHARED_INFRA_HOST: ${SHARED_INFRA_HOST:?set SHARED_INFRA_HOST in .env}
+        PGHOST: postgres
+        PGPORT: "5432"
+        POSTGRES_ADMIN_USER: ${POSTGRES_ADMIN_USER}
+        POSTGRES_ADMIN_PASSWORD: ${POSTGRES_ADMIN_PASSWORD}
+        REDIS_HOST: redis
+        REDIS_PASSWORD: ${REDIS_PASSWORD}
+        MINIO_HOST: minio
+        MINIO_PORT: "9000"
+        MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+        MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+        MAILPIT_URL: http://mailpit:8025
+      AI_SETTINGS_KEY: ${AI_SETTINGS_KEY:?run scripts/ensure-private-config.mjs first}
     ports:
       - "${DASHBOARD_BIND_IP:-0.0.0.0}:8787:8787"
     healthcheck:
@@ -214,7 +216,13 @@ services:
       MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-localhost}
       AGENT_BROKER_SECRET: ${AGENT_BROKER_SECRET:-}
     healthcheck:
-      test: [CMD, node, -e, "fetch('http://127.0.0.1:8790/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:8790/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
       interval: 10s
       timeout: 5s
       retries: 6
@@ -241,7 +249,13 @@ services:
         target: /var/run/docker.sock
         read_only: true
     healthcheck:
-      test: [CMD, node, -e, "fetch('http://127.0.0.1:8791/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:8791/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
       interval: 10s
       timeout: 5s
       retries: 6
@@ -249,7 +263,12 @@ services:
   agent-check:
     profiles: [agent-test]
     image: shared-infra-dashboard:local
-    command: [node, -e, "console.log('Wardroom disposable control test'); setInterval(()=>{}, 60000)"]
+    command:
+      [
+        node,
+        -e,
+        "console.log('Wardroom disposable control test'); setInterval(()=>{}, 60000)",
+      ]
     mem_limit: 64m
     read_only: true
     cap_drop: [ALL]
