@@ -44,7 +44,7 @@ EOF
 cd "$repo_root"
 docker compose --env-file "$env_file" -f compose.yaml config --quiet
 docker compose --env-file "$env_file" -f compose.yaml config >"$rendered_file"
-docker compose --profile tools --env-file "$env_file" -f compose.yaml config --images | sort -u >"$images_file"
+docker compose --profile tools --env-file "$env_file" -f compose.yaml config --images | LC_ALL=C sort -u >"$images_file"
 
 diff -u "$expected_images_file" "$images_file"
 

@@ -5,6 +5,7 @@ import { createApp } from "../dashboard/server.mjs";
 test("AI routes require dashboard authentication and stream server-owned events", async (t) => {
   const chatId = "8b6d8849-78db-4f50-ae3a-7d2c91dca398";
   const created = [];
+  const turns = [];
   const ai = {
     settings: {
       public: async () => ({
@@ -36,13 +37,29 @@ test("AI routes require dashboard authentication and stream server-owned events"
         scope: { scope: "project", project: "sample" },
         events: [],
       }),
-      turn: async (_owner, _id, _message, emit) => {
+      turn: async (_owner, _id, message, emit, _signal, context) => {
+        turns.push({ message, context });
         emit({ type: "text", text: "Hello" });
         emit({ type: "done" });
       },
+      approve: async (_owner, _id, approvalId, emit) => {
+        assert.equal(approvalId, "approval-1");
+        emit({ type: "tool-result", id: "call-1", ok: true });
+        emit({ type: "done" });
+      },
+      reject: () => ({ rejected: true }),
       stop: () => ({ stopped: true }),
       close: async () => ({ closed: true }),
       closeOwner: async () => {},
+      setAuto: (_owner, id, auto) => {
+        assert.equal(id, chatId);
+        return {
+          id: chatId,
+          scope: { scope: "admin", destructive: false },
+          auto,
+          events: [],
+        };
+      },
     },
   };
   const app = createApp(
@@ -84,10 +101,32 @@ test("AI routes require dashboard authentication and stream server-owned events"
   assert.equal(created[0].scope.project, "sample");
   const stream = await fetch(
     base + `/api/ai/conversations/${chatId}/messages`,
-    { method: "POST", headers, body: JSON.stringify({ message: "Hello" }) },
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ message: "Hello", context: "AI & MCP" }),
+    },
   );
   assert.match(stream.headers.get("content-type"), /text\/event-stream/);
   const output = await stream.text();
   assert.match(output, /"type":"text"/);
   assert.match(output, /"type":"done"/);
+  assert.deepEqual(turns, [{ message: "Hello", context: "AI & MCP" }]);
+  const approval = await fetch(
+    base + `/api/ai/conversations/${chatId}/approve`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ approvalId: "approval-1" }),
+    },
+  );
+  assert.match(approval.headers.get("content-type"), /text\/event-stream/);
+  assert.match(await approval.text(), /"type":"tool-result"/);
+  const policy = await fetch(base + `/api/ai/conversations/${chatId}/policy`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ auto: true }),
+  });
+  assert.equal(policy.status, 200);
+  assert.equal((await policy.json()).auto, true);
 });

@@ -15,13 +15,12 @@ export async function mountAi(
   { section = "access", projects = [] } = {},
 ) {
   let cleanup = () => {};
-  let activeSection = ["chat", "connection", "access"].includes(section)
+  let activeSection = ["connection", "access"].includes(section)
     ? section
     : "access";
   const shell = () => {
     host.innerHTML = `<div class="ai-tabs" role="navigation" aria-label="AI and MCP sections">
       ${[
-        ["chat", "Chat"],
         ["connection", "Connection"],
         ["access", "MCP access"],
       ]
@@ -373,7 +372,7 @@ export async function mountAi(
         await mountAgents(surface.firstElementChild, api);
       } else if (activeSection === "connection")
         await renderConnection(surface);
-      else await renderChat(surface);
+      else await renderConnection(surface);
     } catch (error) {
       surface.innerHTML = `<div class="ai-load-error" role="alert"><h2>Couldn’t load this workspace.</h2><p>${esc(error.message)}</p><button class="button" data-ai-retry>Try again</button></div>`;
       surface

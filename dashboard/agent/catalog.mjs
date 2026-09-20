@@ -398,6 +398,9 @@ export function createCatalog(infra, store, { lab } = {}) {
           (!d.destructive || actor.destructive),
       );
     },
+    visibleForApproval(actor) {
+      return definitions.filter((d) => !d.admin || actor.scope === "admin");
+    },
     async call(actor, name, args) {
       const d = definitions.find((d) => d.name === name);
       if (!d) throw new InputError("Unknown tool.");

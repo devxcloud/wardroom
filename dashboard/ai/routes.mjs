@@ -40,7 +40,7 @@ export async function handleAiRequest({
     return true;
   }
   const match =
-    /^\/api\/ai\/conversations\/([0-9a-f-]+)(?:\/(messages|stop|close))?$/.exec(
+    /^\/api\/ai\/conversations\/([0-9a-f-]+)(?:\/(messages|approve|reject|stop|close|policy))?$/.exec(
       path,
     );
   if (!match) throw new InputError("AI endpoint not found.", 404);
@@ -58,11 +58,40 @@ export async function handleAiRequest({
     json(res, 200, await conversations.close(owner, id));
     return true;
   }
-  if (action !== "messages")
+  if (action === "reject") {
+    const input = await readBody(req);
+    if (typeof input?.approvalId !== "string")
+      throw new InputError("Select an approval to cancel.");
+    json(res, 200, conversations.reject(owner, id, input.approvalId));
+    return true;
+  }
+  if (action === "policy") {
+    const input = await readBody(req);
+    if (
+      typeof input?.auto !== "boolean" ||
+      !Object.keys(input).every((key) => key === "auto")
+    )
+      throw new InputError("Choose Protected or Auto.");
+    json(res, 200, conversations.setAuto(owner, id, input.auto));
+    return true;
+  }
+  if (action !== "messages" && action !== "approve")
     throw new InputError("AI endpoint not found.", 404);
   const input = await readBody(req, 34 * 1024);
-  if (typeof input?.message !== "string" || Object.keys(input).length !== 1)
-    throw new InputError("Send one message.");
+  if (action === "messages") {
+    if (
+      typeof input?.message !== "string" ||
+      !Object.keys(input).every((key) =>
+        ["message", "context"].includes(key),
+      ) ||
+      (input.context !== undefined &&
+        (typeof input.context !== "string" ||
+          !/^[\p{L}\p{N} &._\-/]{1,120}$/u.test(input.context)))
+    )
+      throw new InputError("Send one message with valid page context.");
+  }
+  if (action === "approve" && typeof input?.approvalId !== "string")
+    throw new InputError("Select an operation to approve.");
   res.writeHead(200, {
     "Content-Type": "text/event-stream; charset=utf-8",
     "Cache-Control": "no-store",
@@ -76,7 +105,23 @@ export async function handleAiRequest({
     if (!res.writableEnded) controller.abort();
   });
   try {
-    await conversations.turn(owner, id, input.message, emit, controller.signal);
+    if (action === "approve")
+      await conversations.approve(
+        owner,
+        id,
+        input.approvalId,
+        emit,
+        controller.signal,
+      );
+    else
+      await conversations.turn(
+        owner,
+        id,
+        input.message,
+        emit,
+        controller.signal,
+        input.context,
+      );
   } catch (error) {
     emit({
       type: "error",

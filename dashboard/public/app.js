@@ -1,10 +1,13 @@
 import { mountSystem } from "./system.js";
 import { mountTools } from "./tools.js";
 import { mountAi } from "./ai.js";
+import { mountAssistant } from "./assistant.js";
 
 let disposeSystem = () => {};
 let disposeAi = () => {};
+let assistantController;
 const root = document.querySelector("#app");
+const assistantRoot = document.querySelector("#ai-assistant-root");
 const dialog = document.querySelector("#dialog");
 const state = {
   view: "overview",
@@ -127,6 +130,8 @@ function login() {
   disposeSystem();
   disposeAi();
   disposeAi = () => {};
+  assistantController?.dispose();
+  assistantController = undefined;
   state.sequence++;
   root.innerHTML = `<main class="login"><section class="login-art"><a class="brand" href="/"><img src="/mark.svg" alt="">Wardroom<small class="brand-credit">by DevX</small></a><div><div class="login-network">${icon("server")}<div class="orbit">${icon("database")}${icon("redis")}${icon("storage")}${icon("mail")}</div></div><h1>One home for<br>everything underneath.</h1><p>Your databases, storage and services.<br>Running together. Out of your way.</p></div><span class="login-foot">Shared infrastructure <span>Built for your team</span></span></section><section class="login-form"><div class="login-inner"><span class="lock-tile">${icon("lock")}</span><h2>Your workspace is ready.</h2><p>Sign in to explore and manage your shared infrastructure.</p><form id="login-form"><label for="password">Dashboard password</label><input id="password" name="password" type="password" autocomplete="current-password" required placeholder="Enter your dashboard password"><p class="form-error" role="alert"></p><button class="button primary" type="submit">Open workspace ${icon("arrow")}</button></form><div class="private-note">${icon("globe")} Private workspace on your Tailnet</div></div></section></main>`;
   document
@@ -181,7 +186,23 @@ function shell() {
     )
     .join(
       "",
-    )}</nav><div class="sidebar-bottom"><div class="host-note"><span class="online-dot"></span>Connected through Tailscale<code>${esc(state.overview?.host || "devbox")}</code></div><button class="nav-item" data-action="logout">${icon("logout")} Sign out</button></div></aside><div class="workspace"><header class="topbar"><span class="breadcrumbs">Workspace ${icon("chevron")} <strong>${names[state.view]}</strong></span><div class="topbar-right"><span class="env-tag">Development</span><button class="icon-button" data-action="refresh" aria-label="Refresh data" title="Refresh data">${icon("refresh")}</button><button class="avatar" data-action="logout" title="Sign out" aria-label="Sign out">S</button></div></header><main id="main" tabindex="-1"></main><footer class="footer"><span>${icon("lock")} Private infrastructure. Shared possibilities.</span><span id="updated">Live infrastructure data</span></footer></div></div>`;
+    )}</nav><div class="sidebar-bottom"><div class="host-note"><span class="online-dot"></span>Connected through Tailscale<code>${esc(state.overview?.host || "devbox")}</code></div><button class="nav-item" data-action="logout">${icon("logout")} Sign out</button></div></aside><div class="workspace"><header class="topbar"><span class="breadcrumbs">Workspace ${icon("chevron")} <strong>${names[state.view]}</strong></span><div class="topbar-right"><span class="env-tag">Development</span><button class="assistant-trigger" data-action="assistant" aria-controls="ai-assistant-root" aria-expanded="false">${icon("ai-mcp")}<span>Assistant</span></button><button class="icon-button" data-action="refresh" aria-label="Refresh data" title="Refresh data">${icon("refresh")}</button><button class="avatar" data-action="logout" title="Sign out" aria-label="Sign out">S</button></div></header><main id="main" tabindex="-1"></main><footer class="footer"><span>${icon("lock")} Private infrastructure. Shared possibilities.</span><span id="updated">Live infrastructure data</span></footer></div></div>`;
+}
+
+function assistantContext() {
+  if (state.view === "database" && state.table)
+    return `PostgreSQL / ${state.db} / ${state.table.schema}.${state.table.name}`;
+  if (state.view === "database" && state.db) return `PostgreSQL / ${state.db}`;
+  return {
+    overview: "Overview",
+    system: "System",
+    tools: "Tools",
+    "ai-mcp": "AI & MCP",
+    database: "PostgreSQL",
+    projects: "Projects",
+    storage: "Storage",
+    operations: "Operations",
+  }[state.view];
 }
 function heading(title, subtitle, action = "") {
   return `<div class="page-heading"><div><h1>${title}</h1><p>${subtitle}</p></div>${action}</div>`;
@@ -367,7 +388,7 @@ async function render() {
     else if (state.view === "ai-mcp") {
       const main = document.querySelector("#main");
       main.innerHTML =
-        '<div class="page-heading"><div><h1>AI &amp; MCP</h1><p>Work with your infrastructure or connect a coding agent.</p></div></div><section class="ai-hub" aria-label="AI and MCP settings"></section>';
+        '<div class="page-heading"><div><h1>AI &amp; MCP</h1><p>Configure Wardroom’s assistant or connect a coding agent.</p></div></div><section class="ai-hub" aria-label="AI and MCP settings"></section>';
       disposeAi = await mountAi(main.querySelector(".ai-hub"), api, {
         section: state.aiSection,
         projects: state.overview.projects,
@@ -379,6 +400,7 @@ async function render() {
     else if (state.view === "storage") await storage();
     else operations();
     if (seq === state.sequence) {
+      assistantController?.setContext();
       const updated = document.querySelector("#updated");
       if (updated)
         updated.textContent = `Checked ${date(state.overview.checkedAt)}`;
@@ -594,9 +616,7 @@ async function boot() {
     const legacy = requestedView === "tools/ai-mcp";
     const view = legacy ? "ai-mcp" : requestedBase;
     if (view === "ai-mcp")
-      state.aiSection = ["chat", "connection", "access"].includes(
-        requestedSection,
-      )
+      state.aiSection = ["connection", "access"].includes(requestedSection)
         ? requestedSection
         : "access";
     if (legacy) history.replaceState(null, "", "#ai-mcp");
@@ -613,6 +633,17 @@ async function boot() {
       ].includes(view)
     )
       state.view = view;
+    if (!assistantController)
+      assistantController = mountAssistant(assistantRoot, api, {
+        icon,
+        getContext: assistantContext,
+        onConfigure: async () => {
+          state.view = "ai-mcp";
+          state.aiSection = "connection";
+          history.replaceState(null, "", "#ai-mcp/connection");
+          await render();
+        },
+      });
     await render();
   } catch (error) {
     if (!document.querySelector(".login"))
