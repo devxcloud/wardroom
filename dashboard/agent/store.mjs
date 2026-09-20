@@ -25,6 +25,10 @@ function summary(result = {}) {
     "complete",
     "profile",
     "urlPath",
+    "createdb",
+    "enabled",
+    "restored",
+    "generated",
   ];
   const safe = Object.fromEntries(
     keys.filter((k) => Object.hasOwn(result, k)).map((k) => [k, result[k]]),
@@ -62,7 +66,11 @@ export class AgentStore {
       ALTER TABLE shared_infra.agent_tokens ALTER COLUMN expires_at DROP NOT NULL;
       CREATE TABLE IF NOT EXISTS shared_infra.agent_resources (
       kind text NOT NULL, name text NOT NULL, project text NOT NULL REFERENCES shared_infra.projects(name),
-      status text NOT NULL DEFAULT 'ready', PRIMARY KEY(kind,name));`);
+      status text NOT NULL DEFAULT 'ready', PRIMARY KEY(kind,name));
+      CREATE TABLE IF NOT EXISTS shared_infra.project_secrets (
+      project text NOT NULL REFERENCES shared_infra.projects(name) ON DELETE CASCADE,
+      name text NOT NULL, nonce bytea NOT NULL, ciphertext bytea NOT NULL,
+      PRIMARY KEY(project,name));`);
   }
   async issue(input) {
     const value = tokenInput(input);
@@ -129,11 +137,33 @@ export class AgentStore {
   async history(actor) {
     return (
       await this.pool.query(
-        `SELECT id,token_id,tool,target,status,outcome,created_at,updated_at FROM shared_infra.agent_operations
-      WHERE ($1::boolean OR token_id=$2) ORDER BY created_at DESC LIMIT 100`,
-        [actor.scope === "admin", actor.id],
+        `SELECT o.id,o.token_id,o.tool,o.target,o.status,o.outcome,o.created_at,o.updated_at,
+      CASE WHEN t.scope='admin' OR t.source='system' THEN 'admin' ELSE t.label END AS actor
+      FROM shared_infra.agent_operations o
+      JOIN shared_infra.agent_tokens t ON t.id=o.token_id
+      WHERE ($1::boolean OR o.token_id=$2 OR (
+        $3::text IS NOT NULL AND (
+          o.outcome->>'project'=$3
+          OR (o.target LIKE '{%' AND o.target::jsonb->>'project'=$3)
+        )
+      ))
+      ORDER BY o.created_at DESC LIMIT 100`,
+        [actor.scope === "admin", actor.id, actor.project ?? null],
       )
     ).rows;
+  }
+  async recordSystem(tool, target, outcome) {
+    await this.pool.query(
+      `INSERT INTO shared_infra.agent_tokens
+      (id,label,token_hash,scope,project,destructive,expires_at,source)
+      VALUES ('00000000-0000-0000-0000-000000000001','admin','system','admin',NULL,true,NULL,'system')
+      ON CONFLICT DO NOTHING`,
+    );
+    await this.pool.query(
+      `INSERT INTO shared_infra.agent_operations(token_id,id,tool,target,fingerprint,status,outcome)
+      VALUES ('00000000-0000-0000-0000-000000000001',$1,$2,$3,'system','completed',$4)`,
+      [randomUUID(), tool, target, summary(outcome)],
+    );
   }
   async acknowledge(tokenId, id) {
     const result = await this.pool.query(

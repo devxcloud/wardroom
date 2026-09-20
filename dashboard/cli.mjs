@@ -1,11 +1,18 @@
 import { configFrom } from "./config.mjs";
 import { Infrastructure } from "./infra.mjs";
 import { InputError, connectionText } from "./domain.mjs";
+import { ProjectSecrets } from "./agent/secrets.mjs";
+import { MinioIam } from "./agent/minio-iam.mjs";
 
-const infra = new Infrastructure(configFrom());
+const config = configFrom();
+const infra = new Infrastructure(config);
 try {
   const [command, name] = process.argv.slice(2);
   await infra.initialize();
+  if (config.sessionSecret) {
+    infra.secrets = new ProjectSecrets(infra.pool, config.sessionSecret);
+    infra.iam = new MinioIam(config.s3);
+  }
   if (command === "provision") {
     const project = await infra.provision({
       name,

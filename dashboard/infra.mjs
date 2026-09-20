@@ -83,12 +83,12 @@ export class Infrastructure {
         [value.name, value],
       );
     }
-    await this.ensureProjectCreatedb();
+    this.createdbGrants = await this.ensureProjectCreatedb();
   }
 
   async ensureProjectCreatedb() {
     const names = (await this.projects()).map((p) => p.name);
-    if (!names.length) return;
+    if (!names.length) return [];
     const found = (
       await this.pool.query(
         "SELECT rolname FROM pg_roles WHERE rolname=ANY($1) AND NOT rolcreatedb",
@@ -97,6 +97,7 @@ export class Infrastructure {
     ).rows;
     for (const role of found)
       await this.pool.query(`ALTER ROLE ${qi(role.rolname)} CREATEDB`);
+    return found.map((role) => role.rolname);
   }
 
   async projects() {
@@ -250,6 +251,10 @@ export class Infrastructure {
         "INSERT INTO shared_infra.events(project,message) VALUES ($1,'Project provisioned')",
         [p.name],
       );
+      if (this.secrets)
+        await this.secrets.set(p.name, `db:${p.name}`, input.password);
+      if (this.iam && this.secrets)
+        await this.iam.ensure(p.name, [p.bucket, p.testBucket], this.secrets);
       return { ...p, status: "ready" };
     } catch (error) {
       if (registered) {
@@ -298,13 +303,24 @@ export class Infrastructure {
   }
 
   async databases() {
-    return (
-      await this.pool
-        .query(`SELECT d.datname AS name, pg_get_userbyid(d.datdba) AS owner,
+    const sql = `SELECT d.datname AS name, pg_get_userbyid(d.datdba) AS owner,
       pg_database_size(d.oid)::float8 AS bytes, pg_encoding_to_char(d.encoding) AS encoding,
       (SELECT count(*)::int FROM pg_stat_activity a WHERE a.datid=d.oid) AS connections
-      FROM pg_database d WHERE NOT d.datistemplate AND d.datallowconn ORDER BY d.datname`)
-    ).rows;
+      $extra
+      FROM pg_database d WHERE NOT d.datistemplate AND d.datallowconn ORDER BY d.datname`;
+    try {
+      return (
+        await this.pool.query(
+          sql.replace(
+            "$extra",
+            `, (SELECT max(a.backend_start) FROM pg_stat_activity a WHERE a.datid=d.oid) AS "lastConnected",
+      (pg_stat_file('base/' || d.oid::text || '/PG_VERSION', true)).modification AS "createdAt"`,
+          ),
+        )
+      ).rows;
+    } catch {
+      return (await this.pool.query(sql.replace("$extra", ""))).rows;
+    }
   }
 
   async roles() {

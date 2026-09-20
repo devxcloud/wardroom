@@ -5,6 +5,8 @@ import { AgentResources } from "./resources.mjs";
 import { AgentLab } from "./lab.mjs";
 import { createCatalog } from "./catalog.mjs";
 import { createMcpApp } from "./mcp.mjs";
+import { ProjectSecrets } from "./secrets.mjs";
+import { MinioIam } from "./minio-iam.mjs";
 
 const config = configFrom();
 config.pg.max = 12;
@@ -13,7 +15,15 @@ try {
   await infra.initialize();
   const store = new AgentStore(infra.pool, config.sessionSecret);
   await store.initialize();
-  const lab = new AgentLab(infra, new AgentResources(infra));
+  infra.secrets = new ProjectSecrets(infra.pool, config.sessionSecret);
+  infra.iam = new MinioIam(config.s3);
+  for (const name of infra.createdbGrants || [])
+    await store.recordSystem(
+      "user_set_createdb",
+      JSON.stringify({ project: name, user: name }),
+      { project: name, user: name, createdb: true },
+    );
+  const lab = new AgentLab(infra, new AgentResources(infra, { secrets: infra.secrets, iam: infra.iam }));
   const catalog = createCatalog(infra, store, { lab });
   const app = createMcpApp({
     catalog,

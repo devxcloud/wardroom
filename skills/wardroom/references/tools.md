@@ -7,8 +7,8 @@ Mutations need `operationId` (UUID). Destructive tools also need `destructive: t
 | Tool | Notes |
 | --- | --- |
 | `project_list` | Visible projects for this token |
-| `project_get` | Registry resources |
-| `project_connections` | Placeholder connection templates |
+| `project_get` | Registry resources plus whether DB/S3 secrets are stored (`secrets.database` / `secrets.s3`) |
+| `project_connections` | Placeholders by default. `includeSecrets` on a destructive token fills stored DB password + MinIO service-account keys |
 | `project_provision` | Create user, `{name}` + `{name}_test` DBs, buckets. Same password on retry |
 | `project_retire` | Destructive. All registered resources |
 
@@ -24,9 +24,13 @@ Mutations need `operationId` (UUID). Destructive tools also need `destructive: t
 | `user_drop` | Destructive |
 | `user_grant` | `read` or `write` on public schema |
 | `user_createdb` | `ALTER ROLE {project} CREATEDB` only. No admin password |
-| `user_password_rotate` | Destructive |
-| `table_list` / `table_rows` | Rows use project login + password |
+| `user_set_createdb` | `{ enabled }` grant or revoke CREATEDB on the owner |
+| `user_password_rotate` | Destructive. Omit `password` to generate and store; never returned |
+| `table_list` / `table_rows` | Rows use project login; password optional if stored |
+| `sql_query` | Read-only SELECT/WITH/EXPLAIN/SHOW. Safe token. 8s |
 | `sql_execute` | Destructive. Project login only. 8s limit |
+| `database_backup` | Custom-format dump to `{bucket}-backups` by default |
+| `database_restore` | Destructive. New extra database from a dump object |
 
 ## Redis (relative keys)
 
@@ -42,6 +46,14 @@ Mutations need `operationId` (UUID). Destructive tools also need `destructive: t
 | --- | --- |
 | `bucket_list` / `bucket_create` / `bucket_drop` | Drop is destructive; purge empties objects |
 | `object_list` / `object_get` / `object_put` / `object_delete` | Get ≤32 KiB |
+| `s3_credentials_rotate` | Destructive. Replace project MinIO service account |
+
+## Mailpit
+
+| Tool | Notes |
+| --- | --- |
+| `mail_list` / `mail_search` / `mail_get` | From/To domain exactly `{project}.test` or `{project}.local` |
+| `mail_delete` | One message, after the same domain check |
 
 ## Host and Docker (admin unless noted)
 

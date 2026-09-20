@@ -20,6 +20,9 @@ test("reject reserved, invalid and overlapping resource names", () => {
   for (const input of [
     { name: "a" },
     { name: "postgres" },
+    { name: "test" },
+    { name: "local" },
+    { name: "mail" },
     { name: "Bad" },
     { name: "sample", database: "same", testDatabase: "same" },
     { name: "sample", bucket: "bad_name" },
@@ -44,4 +47,14 @@ test("connection templates contain placeholders and test isolation", () => {
   assert.match(text, /<PROJECT_DB_PASSWORD>/);
   assert.match(text, /sample-test/);
   assert.match(text, /sample:test:/);
+  assert.match(text, /MAIL_DOMAIN=sample\.test/);
+  assert.doesNotMatch(text, /secret-db-pass/);
+  const filled = connectionText(projectInput({ name: "sample" }), "100.1.2.3", {
+    dbPassword: "secret-db-pass",
+    s3AccessKey: "wrabc",
+    s3SecretKey: "s3secret",
+  });
+  assert.match(filled, /secret-db-pass/);
+  assert.match(filled, /S3_ACCESS_KEY=wrabc/);
+  assert.doesNotMatch(filled, /<PROJECT_DB_PASSWORD>/);
 });

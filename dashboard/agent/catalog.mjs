@@ -9,6 +9,11 @@ import {
 } from "./policy.mjs";
 import { AgentResources } from "./resources.mjs";
 import { AgentData } from "./data.mjs";
+import { ProjectSecrets } from "./secrets.mjs";
+import { AgentMail, mailDomain } from "./mail.mjs";
+import { MinioIam } from "./minio-iam.mjs";
+import { AgentDump } from "./dump.mjs";
+import { assertReadOnlySql } from "./sql-read.mjs";
 
 const identifier = z.string().regex(/^[a-z][a-z0-9_]{2,62}$/);
 const bucketName = z.string().regex(/^[a-z][a-z0-9-]{1,61}[a-z0-9]$/);
@@ -26,8 +31,15 @@ const page = { project: nameSchema };
 const mutation = { ...page, operationId: operationSchema };
 
 export function createCatalog(infra, store, { lab } = {}) {
-  const resources = new AgentResources(infra);
+  const secrets = store?.secret
+    ? new ProjectSecrets(infra.pool, store.secret)
+    : infra.secrets;
+  const iam =
+    infra.iam || (infra.config?.s3 ? new MinioIam(infra.config.s3) : null);
+  const resources = new AgentResources(infra, { secrets, iam });
   const data = new AgentData(infra, resources);
+  const mail = new AgentMail(infra.config?.mailpit);
+  const dump = new AgentDump(infra, resources);
   const definitions = [];
   const add = (name, description, shape, handler, flags = {}) =>
     definitions.push({
@@ -58,21 +70,43 @@ export function createCatalog(infra, store, { lab } = {}) {
     "project_get",
     "Inspect a registered project's resources.",
     page,
-    async (a) => ({
-      project: await resources.project(a.project),
-      resources: await resources.list(a.project),
-    }),
+    async (a) => {
+      const stored = secrets ? await secrets.load(a.project) : {};
+      return {
+        project: await resources.project(a.project),
+        resources: await resources.list(a.project),
+        secrets: {
+          database: Boolean(stored.dbPassword),
+          s3: Boolean(stored.s3AccessKey && stored.s3SecretKey),
+        },
+      };
+    },
   );
   add(
     "project_connections",
-    "Connection templates. Credentials are deliberately placeholders.",
-    page,
-    async (a) => ({
-      text: connectionText(
-        await resources.project(a.project),
-        infra.config.host,
-      ),
-    }),
+    "Connection templates. Pass includeSecrets on a destructive project token to fill the stored database password and MinIO service-account keys. Redis stays a placeholder (shared). The browser connections endpoint never returns secrets.",
+    { ...page, includeSecrets: z.boolean().default(false) },
+    async (a, actor) => {
+      if (a.includeSecrets && actor.destructive !== true)
+        throw new InputError(
+          "Token does not allow destructive operations.",
+          403,
+        );
+      const stored =
+        a.includeSecrets && secrets ? await secrets.load(a.project) : {};
+      return {
+        text: connectionText(
+          await resources.project(a.project),
+          infra.config.host,
+          stored,
+        ),
+        mailDomain: mailDomain(a.project),
+        secrets: {
+          database: Boolean(stored.dbPassword),
+          s3: Boolean(stored.s3AccessKey && stored.s3SecretKey),
+        },
+      };
+    },
   );
   write(
     "project_provision",
@@ -96,9 +130,17 @@ export function createCatalog(infra, store, { lab } = {}) {
         .filter((r) => r.kind === "database")
         .map((r) => r.name);
       return {
-        databases: (await infra.databases()).filter(
-          (d) => d.owner === a.project || names.includes(d.name),
-        ),
+        databases: (await infra.databases())
+          .filter((d) => d.owner === a.project || names.includes(d.name))
+          .map((d) => ({
+            ...d,
+            ageSeconds: d.createdAt
+              ? Math.max(
+                  0,
+                  Math.floor((Date.now() - new Date(d.createdAt)) / 1000),
+                )
+              : null,
+          })),
       };
     },
   );
@@ -133,7 +175,7 @@ export function createCatalog(infra, store, { lab } = {}) {
       schema: identifier,
       table: identifier,
       user: identifier,
-      password,
+      password: password.optional(),
       offset: z.number().int().min(0).max(100000).default(0),
     },
     async (a) => {
@@ -151,6 +193,26 @@ export function createCatalog(infra, store, { lab } = {}) {
     "Drop an extra database owned by the project, registered or created by the project login. Refuses active connections and base databases.",
     { database: identifier },
     (a) => resources.drop(a.project, "database", a.database),
+    { destructive: true },
+  );
+  write(
+    "database_backup",
+    "pg_dump custom-format backup of an owned database. Defaults to the project's {bucket}-backups bucket (created if missing), not the live application bucket. Default key backups/{database}-{timestamp}.dump.",
+    {
+      database: identifier,
+      bucket: bucketName.optional(),
+    },
+    (a) => dump.backup(a),
+  );
+  write(
+    "database_restore",
+    "Restore a custom-format dump object into a new extra database. Objects are reassigned to the project login so the app can read them. Refuses existing names. Destructive.",
+    {
+      database: identifier,
+      bucket: bucketName.optional(),
+      key,
+    },
+    (a) => dump.restore(a),
     { destructive: true },
   );
   write(
@@ -180,12 +242,18 @@ export function createCatalog(infra, store, { lab } = {}) {
     "user_createdb",
     "Grant CREATEDB to the project owner login so it can create extra test databases. Does not grant superuser or CREATEROLE. Do not ask for admin SQL passwords.",
     {},
-    (a) => resources.grantCreatedb(a.project),
+    (a) => resources.setCreatedb(a.project, true),
+  );
+  write(
+    "user_set_createdb",
+    "Grant or revoke CREATEDB on the project owner login. Extra logins stay without CREATEDB. Does not grant superuser or CREATEROLE.",
+    { enabled: z.boolean() },
+    (a) => resources.setCreatedb(a.project, a.enabled),
   );
   write(
     "user_password_rotate",
-    "Explicitly rotate a project login password; existing applications need updating.",
-    { user: identifier, password },
+    "Rotate a project login password. Omit password to generate one server-side, store it, and return nothing — read it once with project_connections includeSecrets on a destructive token. Passing a password is recorded by the AI client.",
+    { user: identifier, password: password.optional() },
     (a) => resources.rotate(a),
     { destructive: true },
   );
@@ -195,11 +263,26 @@ export function createCatalog(infra, store, { lab } = {}) {
     {
       database: identifier,
       user: identifier,
-      password,
+      password: password.optional(),
       sql: z.string().min(1).max(32768),
     },
     (a) => resources.sql(a),
     { destructive: true },
+  );
+  add(
+    "sql_query",
+    "Read-only SQL as a project login in a READ ONLY transaction. SELECT/WITH/EXPLAIN/SHOW only, one statement, 100-row/128KiB cap, 8s deadline. Password may be omitted after a successful login or provision stored it. Does not require a destructive token.",
+    {
+      ...page,
+      database: identifier,
+      user: identifier,
+      password: password.optional(),
+      sql: z.string().min(1).max(32768),
+    },
+    (a) => {
+      assertReadOnlySql(a.sql);
+      return resources.sql(a, true);
+    },
   );
   add(
     "redis_scan",
@@ -286,6 +369,51 @@ export function createCatalog(infra, store, { lab } = {}) {
     "Delete one exact object.",
     { bucket: bucketName, key },
     (a) => data.objects("delete", a),
+    { overwrites: true },
+  );
+  write(
+    "s3_credentials_rotate",
+    "Mint or replace the project's MinIO service account. Policy is limited to owned buckets. Applications using previous keys must be updated. Root MinIO credentials are not returned.",
+    {},
+    async (a) => {
+      if (!iam || !secrets)
+        throw new InputError("MinIO identity is not configured.", 503);
+      await iam.rotate(
+        a.project,
+        await resources.appBuckets(a.project),
+        secrets,
+      );
+      return { project: a.project, rotated: true };
+    },
+    { destructive: true },
+  );
+  add(
+    "mail_list",
+    "List captured Mailpit messages whose From or To/Cc/Bcc domain is exactly {project}.test or {project}.local. Shared inbox; other projects' mail is hidden.",
+    {
+      ...page,
+      query: z.string().max(300).optional(),
+      start: z.number().int().min(0).max(100000).default(0),
+    },
+    (a) => mail.list(a),
+  );
+  add(
+    "mail_search",
+    "Search Mailpit then keep only messages in this project's mail domain.",
+    { ...page, query: z.string().min(1).max(300) },
+    (a) => mail.list(a),
+  );
+  add(
+    "mail_get",
+    "Read one captured message, including a 32 KiB text/html body. Must belong to this project's mail domain.",
+    { ...page, id: z.string().min(1).max(128) },
+    (a) => mail.get(a),
+  );
+  write(
+    "mail_delete",
+    "Delete one captured message after verifying it belongs to this project's mail domain. Never wipes the shared inbox.",
+    { id: z.string().min(1).max(128) },
+    (a) => mail.remove(a),
     { overwrites: true },
   );
   add(
@@ -527,6 +655,7 @@ export function createCatalog(infra, store, { lab } = {}) {
               "vg",
               "lv",
               "sizeGiB",
+              "enabled",
             ]
               .filter((k) => a[k] !== undefined)
               .map((k) => [k, a[k]]),

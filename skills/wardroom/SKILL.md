@@ -1,6 +1,6 @@
 ---
 name: wardroom
-description: This skill should be used when the user mentions Wardroom, shared-infra, Docker context, or asks to provision a project database, run project SQL, manage Redis or MinIO, grow LVM, or operate Docker containers, volumes, or networks through Wardroom MCP. Also use for Claude Code or Codex MCP token setup against the Wardroom endpoint.
+description: This skill should be used when the user mentions Wardroom, shared-infra, Docker context, or asks to provision a project database, run project SQL, read captured Mailpit mail, manage Redis or MinIO, grow LVM, or operate Docker containers, volumes, or networks through Wardroom MCP. Also use for Claude Code or Codex MCP token setup against the Wardroom endpoint.
 ---
 
 # Wardroom
@@ -64,17 +64,21 @@ Full catalog: [references/tools.md](references/tools.md).
 
 ## Typical work
 
-**Inspect a project.** `project_list` → `project_get` → `project_connections`. Connection strings use placeholders (`<PROJECT_DB_PASSWORD>`, `<REDIS_PASSWORD>`, MinIO keys). Fill from the user's local env, not from Wardroom admin.
+**Inspect a project.** `project_list` → `project_get` → `project_connections`. Default templates use placeholders. On a **destructive** project token, `includeSecrets: true` fills the stored database password and MinIO service-account keys. Redis stays `<REDIS_PASSWORD>` (shared). Do not read Wardroom `.env` for the project DB password when the token can return it. The browser connections page never includes secrets.
 
-**Provision.** `project_provision` with `project` and `password` (≥12 chars). Retry with the **same** password if it partially failed.
+**Provision.** `project_provision` with `project` and `password` (≥12 chars). Retry with the **same** password if it partially failed. Provision stores the password and mints a MinIO service account limited to the project's buckets.
 
-**Extra databases.** Project owner logins have `CREATEDB`. Grant it on existing owners with `user_createdb` (no admin SQL). Create a registered extra DB with `database_create`. List/drop include DBs the owner created. Extra logins stay without `CREATEDB`.
+**Extra databases.** Project owner logins have `CREATEDB`. Grant or revoke with `user_set_createdb` `{ enabled }` (no admin SQL). `user_createdb` still grants. Create a registered extra DB with `database_create`. `database_list` includes `createdAt`, `ageSeconds`, and `lastConnected`. List/drop include DBs the owner created. Extra logins stay without `CREATEDB`.
 
-**SQL.** `sql_execute` uses the **project** user+password, needs a destructive token, 8s deadline. Interrupted writes may be `uncertain`.
+**SQL.** `sql_query` is read-only SELECT/WITH/EXPLAIN/SHOW as the project login; safe token; 8s; 100 rows. `sql_execute` is destructive, same login, may write. Password may be omitted after provision or `user_password_rotate` without a password argument (server generates and stores it; read once via `project_connections` `includeSecrets`). Never paste the database password into chat. Never `SET ROLE` or admin SQL.
+
+**Mail.** Shared Mailpit inbox. `mail_list` / `mail_search` / `mail_get` / `mail_delete` only see messages whose From or To/Cc/Bcc domain is exactly `{project}.test` or `{project}.local`. Set app `From` (and test recipients) to `MAIL_DOMAIN`. Names `test`, `local`, and `mail` are reserved. Never delete the whole inbox.
+
+**Backup.** `database_backup` dumps an owned database to `{bucket}-backups` (created if missing), key `backups/{database}-{timestamp}.dump`. That bucket is not on the project's MinIO service-account policy. `database_restore` creates a **new** extra database from that object (destructive) and reassigns non-extension objects to the project login. Snapshot before a test suite that truncates.
 
 **Redis.** Keys are **relative**. The server prefixes `{project}:`. Do not send the prefix. Do not `FLUSHALL`.
 
-**S3.** Only owned buckets. `object_get` is capped at 32 KiB base64.
+**S3.** Only owned buckets. `object_get` is capped at 32 KiB base64. App credentials from `project_connections` `includeSecrets` are the project service account, not MinIO root. Rotate with `s3_credentials_rotate`.
 
 **Host metrics vs LVM.** `system_metrics` `storage[].availableBytes` is filesystem free on a mount. `lvm.volumeGroups[].freeBytes` (or `lvm_list`) is unallocated VG space. Do not treat them as the same. Grow with `lvm_extend`: `sizeGiB` is the new **absolute** size in GiB (1024³), never a shrink. Example: `vg=ubuntu-vg`, `lv=ubuntu-lv`, `sizeGiB=200`.
 

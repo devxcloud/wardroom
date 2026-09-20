@@ -10,6 +10,9 @@ export const protectedNames = new Set([
   "template1",
   "shared_infra",
   "hoppscotch",
+  "test",
+  "local",
+  "mail",
 ]);
 export function projectName(name) {
   if (!nameSchema.safeParse(name).success || protectedNames.has(name))

@@ -17,6 +17,8 @@ import { handleAiRequest } from "./ai/routes.mjs";
 import { AgentResources } from "./agent/resources.mjs";
 import { AgentLab } from "./agent/lab.mjs";
 import { createCatalog } from "./agent/catalog.mjs";
+import { ProjectSecrets } from "./agent/secrets.mjs";
+import { MinioIam } from "./agent/minio-iam.mjs";
 import { AiSettings } from "./ai/settings.mjs";
 import { AiConversations } from "./ai/conversations.mjs";
 
@@ -384,6 +386,14 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     await infra.initialize();
     infra.agents = new AgentStore(infra.pool, config.sessionSecret);
     await infra.agents.initialize();
+    infra.secrets = new ProjectSecrets(infra.pool, config.sessionSecret);
+    infra.iam = new MinioIam(config.s3);
+    for (const name of infra.createdbGrants || [])
+      await infra.agents.recordSystem(
+        "user_set_createdb",
+        JSON.stringify({ project: name, user: name }),
+        { project: name, user: name, createdb: true },
+      );
     const settings = new AiSettings(infra.pool, config.aiSettingsKey);
     await settings.initialize();
     const lab = new AgentLab(infra, new AgentResources(infra));

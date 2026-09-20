@@ -67,7 +67,7 @@ test("remote agent lifecycle is scoped, audited, retry-safe and revocable", asyn
       database: db,
       user: project,
       password,
-      sql: "CREATE TABLE sample (id integer); INSERT INTO sample VALUES (7)",
+      sql: "CREATE TABLE sample (id integer); INSERT INTO sample VALUES (7); CREATE SCHEMA app; CREATE FUNCTION app.sample_inc(integer) RETURNS integer LANGUAGE sql IMMUTABLE AS 'SELECT $1 + 1'",
     });
     const read = await call("sql_execute", {
       database: db,
@@ -114,6 +114,101 @@ test("remote agent lifecycle is scoped, audited, retry-safe and revocable", asyn
       }),
       /destructive/,
     );
+    const queried = await catalog.call(
+      { ...actor, destructive: false },
+      "sql_query",
+      {
+        project,
+        database: db,
+        user: project,
+        password,
+        sql: "SELECT id FROM sample",
+      },
+    );
+    assert.equal(queried.rows[0].id, 7);
+    await assert.rejects(
+      catalog.call(
+        { ...actor, destructive: false },
+        "sql_query",
+        {
+          project,
+          database: db,
+          user: project,
+          password,
+          sql: "DELETE FROM sample",
+        },
+      ),
+      /read-only/,
+    );
+    const backup = await call("database_backup", { database: db });
+    assert.match(backup.result.bucket, /-backups$/);
+    const snap = `${project}_snap`;
+    await call("database_restore", {
+      database: snap,
+      bucket: backup.result.bucket,
+      key: backup.result.key,
+    });
+    const restored = await catalog.call(
+      { ...actor, destructive: false },
+      "sql_query",
+      {
+        project,
+        database: snap,
+        user: project,
+        password,
+        sql: "SELECT id FROM sample",
+      },
+    );
+    assert.equal(restored.rows[0].id, 7);
+    await call("sql_execute", {
+      database: snap,
+      user: project,
+      password,
+      sql: "CREATE OR REPLACE FUNCTION app.sample_inc(integer) RETURNS integer LANGUAGE sql IMMUTABLE AS 'SELECT $1 + 2'",
+    });
+    const replaced = await catalog.call(
+      { ...actor, destructive: false },
+      "sql_query",
+      {
+        project,
+        database: snap,
+        user: project,
+        password,
+        sql: "SELECT app.sample_inc(1) AS n",
+      },
+    );
+    assert.equal(replaced.rows[0].n, 3);
+    await infra.pool.query(
+      "DELETE FROM shared_infra.project_secrets WHERE project=$1 AND name=$2",
+      [project, `db:${project}`],
+    );
+    await assert.rejects(
+      catalog.call(
+        { ...actor, destructive: false },
+        "sql_query",
+        {
+          project,
+          database: db,
+          user: project,
+          sql: "SELECT 1 AS n",
+        },
+      ),
+      /password/,
+    );
+    const rotated = await call("user_password_rotate", { user: project });
+    assert.equal(rotated.result.generated, true);
+    assert.doesNotMatch(JSON.stringify(rotated), /PASSWORD|password":"/);
+    const storedLogin = await catalog.call(
+      { ...actor, destructive: false },
+      "sql_query",
+      {
+        project,
+        database: db,
+        user: project,
+        sql: "SELECT 1 AS n",
+      },
+    );
+    assert.equal(storedLogin.rows[0].n, 1);
     await call("redis_set", { key: "sample", value: "hello", ttl: 60 });
     const redisAudit = (await store.history(actor)).find(
       (o) => o.tool === "redis_set",

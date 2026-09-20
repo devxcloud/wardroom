@@ -40,6 +40,9 @@ test("token input is strict, bounded, and excludes control-plane projects", () =
     "postgres",
     "hoppscotch",
     "shared_infra",
+    "test",
+    "local",
+    "mail",
     "abc*",
     "alpha:test",
   ])

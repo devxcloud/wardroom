@@ -75,13 +75,13 @@ The Compose wrapper generates `AI_SETTINGS_KEY` in ignored `.env`. Keep it stabl
 
 Dashboard AI conversations are memory-only and expire after 30 minutes. Their internal short-lived agent tokens stay out of the MCP token list but retain normal operation audit records. Stopping a response prevents later dispatch; inspect operation history if a mutation was already running. Provider failures never trigger a fallback or automatic mutation retry.
 
-The dashboard is a trusted development admin interface. Its server uses the PostgreSQL administrator and shared Redis/MinIO credentials. The browser never receives those credentials; generated connection settings contain placeholders. Copy the correct values from local ignored environment files and URL-encode passwords inside database/Redis URLs.
+The dashboard is a trusted development admin interface. Its server uses the PostgreSQL administrator and shared Redis/MinIO root credentials. The browser never receives those credentials; generated connection settings contain placeholders. Destructive project MCP tokens may request stored project secrets (`includeSecrets`) for the database password and MinIO service account; Redis stays a placeholder. Copy remaining values from local ignored environment files and URL-encode passwords inside database/Redis URLs.
 
 Change `DASHBOARD_PASSWORD` in `.env` and run `make up` to rotate dashboard access; restarting invalidates sessions. PostgreSQL's `POSTGRES_PASSWORD` only initializes an empty cluster: changing `.env` alone does not rotate an existing database password. Project provisioning intentionally does not rotate passwords.
 
 The ignored `projects.local.json` is an optional initial metadata catalog; `projects.example.json` documents its format. The live source of truth is `postgres.shared_infra.projects`; events are in `shared_infra.events`. The dashboard and CLI serialize provisioning with a PostgreSQL advisory lock. Failures can leave partially created resources; retry the same project/password to finish. Existing resource assignments cannot be edited into another project.
 
-Redis prefixes are an application convention, not an access boundary. Ensure cache/queue libraries apply them to all keys; do not use `FLUSHALL` or `FLUSHDB`. Use a distinct project name for each concurrent destructive test suite. MinIO credentials and Mailpit are deliberately shared for development.
+Redis prefixes are an application convention, not an access boundary. Ensure cache/queue libraries apply them to all keys; do not use `FLUSHALL` or `FLUSHDB`. Use a distinct project name for each concurrent destructive test suite. Mailpit is a shared inbox: MCP mail tools only return messages whose From or recipients use the exact domain `{project}.test` or `{project}.local`. Project names `test`, `local`, and `mail` are reserved so those suffixes cannot collide. Set application `From` (and test recipients) accordingly. MinIO root credentials still exist for the console; provision mints a per-project service account limited to that project's buckets.
 
 ## Backups and restore
 

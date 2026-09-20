@@ -15,7 +15,17 @@ export function projectInput(input) {
     throw new InputError(
       "Use 3–48 lowercase letters, numbers or underscores; start with a letter.",
     );
-  if (["postgres", "template0", "template1", "shared_infra"].includes(name))
+  if (
+    [
+      "postgres",
+      "template0",
+      "template1",
+      "shared_infra",
+      "test",
+      "local",
+      "mail",
+    ].includes(name)
+  )
     throw new InputError("This project name is reserved.");
   const database = input.database || name;
   const testDatabase = input.testDatabase || `${name}_test`;
@@ -50,11 +60,16 @@ export function projectInput(input) {
   };
 }
 
-export function connectionText(project, host) {
+export function connectionText(project, host, secrets = {}) {
+  const dbPassword = secrets.dbPassword
+    ? encodeURIComponent(secrets.dbPassword)
+    : "<PROJECT_DB_PASSWORD>";
+  const s3Access = secrets.s3AccessKey || "<MINIO_ROOT_USER>";
+  const s3Secret = secrets.s3SecretKey || "<MINIO_ROOT_PASSWORD>";
   return `# ${project.name} • shared development infrastructure
-# Replace password placeholders with your local credentials.
-DATABASE_URL=postgres://${encodeURIComponent(project.name)}:<PROJECT_DB_PASSWORD>@${host}:5434/${project.database}
-TEST_DATABASE_URL=postgres://${encodeURIComponent(project.name)}:<PROJECT_DB_PASSWORD>@${host}:5434/${project.testDatabase}
+# Replace remaining placeholders with your local credentials.
+DATABASE_URL=postgres://${encodeURIComponent(project.name)}:${dbPassword}@${host}:5434/${project.database}
+TEST_DATABASE_URL=postgres://${encodeURIComponent(project.name)}:${dbPassword}@${host}:5434/${project.testDatabase}
 REDIS_URL=redis://:<REDIS_PASSWORD>@${host}:6379/0
 REDIS_KEY_PREFIX=${project.redisPrefix}
 TEST_REDIS_KEY_PREFIX=${project.redisPrefix}test:
@@ -63,10 +78,11 @@ S3_BUCKET=${project.bucket}
 S3_TEST_BUCKET=${project.testBucket}
 S3_REGION=us-east-1
 S3_FORCE_PATH_STYLE=true
-S3_ACCESS_KEY=<MINIO_ROOT_USER>
-S3_SECRET_KEY=<MINIO_ROOT_PASSWORD>
+S3_ACCESS_KEY=${s3Access}
+S3_SECRET_KEY=${s3Secret}
 SMTP_HOST=${host}
-SMTP_PORT=1125`;
+SMTP_PORT=1125
+MAIL_DOMAIN=${project.name}.test`;
 }
 
 export function pageOffset(value) {

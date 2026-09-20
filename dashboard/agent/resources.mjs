@@ -1,4 +1,5 @@
 import pg from "pg";
+import { randomBytes } from "node:crypto";
 import {
   InputError,
   quoteIdentifier as qi,
@@ -7,15 +8,24 @@ import {
 import { projectName, protectedNames } from "./policy.mjs";
 
 export class AgentResources {
-  constructor(infra) {
+  constructor(infra, { secrets, iam } = {}) {
     this.infra = infra;
     this.pool = infra.pool;
+    this.secrets = secrets;
+    this.iam = iam;
   }
   async project(name) {
     projectName(name);
     const p = (await this.infra.projects()).find((p) => p.name === name);
     if (!p) throw new InputError("Project not found.", 404);
     return p;
+  }
+  async appBuckets(project) {
+    const p = await this.project(project);
+    const backups = `${p.bucket}-backups`;
+    return (await this.list(project))
+      .filter((r) => r.kind === "bucket" && r.name !== backups)
+      .map((r) => r.name);
   }
   async list(project) {
     const p = await this.project(project);
@@ -85,12 +95,17 @@ export class AgentResources {
     throw new InputError("Resource is not owned by this project.", 403);
   }
   async grantCreatedb(project) {
+    return this.setCreatedb(project, true);
+  }
+  async setCreatedb(project, enabled) {
     await this.project(project);
     await this.role(project);
-    await this.pool.query(`ALTER ROLE ${qi(project)} CREATEDB`);
-    return { project, user: project, createdb: true };
+    await this.pool.query(
+      `ALTER ROLE ${qi(project)} ${enabled ? "CREATEDB" : "NOCREATEDB"}`,
+    );
+    return { project, user: project, createdb: enabled };
   }
-  async create(project, kind, name, password) {
+  async create(project, kind, name, password, { attachIam = true } = {}) {
     const p = await this.project(project);
     const valid =
       kind === "bucket"
@@ -176,6 +191,14 @@ export class AgentResources {
         "UPDATE shared_infra.agent_resources SET status='ready' WHERE kind=$1 AND name=$2",
         [kind, name],
       );
+      if (kind === "user" && this.secrets)
+        await this.secrets.set(project, `db:${name}`, password);
+      if (kind === "bucket" && attachIam && this.iam && this.secrets)
+        await this.iam.ensure(
+          project,
+          await this.appBuckets(project),
+          this.secrets,
+        );
       return { project, kind, name };
     } finally {
       let broken = false;
@@ -239,8 +262,18 @@ export class AgentResources {
   }
   async rotate({ project, user, password }) {
     await this.owned(project, "user", user);
-    await this.pool.query(`ALTER ROLE ${qi(user)} PASSWORD ${ql(password)}`);
-    return { project, user, rotated: true };
+    const generated = password == null;
+    let next = password;
+    if (generated) {
+      if (!this.secrets)
+        throw new InputError(
+          "Omit the password only when Wardroom can store it.",
+        );
+      next = randomBytes(24).toString("base64url");
+    }
+    await this.pool.query(`ALTER ROLE ${qi(user)} PASSWORD ${ql(next)}`);
+    if (this.secrets) await this.secrets.set(project, `db:${user}`, next);
+    return { project, user, rotated: true, generated };
   }
   async withLogin(
     { project, database, user, password },
@@ -249,12 +282,16 @@ export class AgentResources {
   ) {
     await this.owned(project, "database", database);
     await this.owned(project, "user", user);
+    const secret =
+      password ||
+      (this.secrets && (await this.secrets.get(project, `db:${user}`)));
+    if (!secret) throw new InputError("Supply the database password.");
     // Actual nonprivileged login. SET ROLE on the admin connection is not safe.
     const c = new pg.Client({
       ...this.infra.config.pg,
       database,
       user,
-      password,
+      password: secret,
       statement_timeout: 5000,
       lock_timeout: 5000,
       query_timeout: 7000,
@@ -267,6 +304,8 @@ export class AgentResources {
       await c.query(readonly ? "BEGIN READ ONLY" : "BEGIN");
       const result = await task(c);
       await c.query("COMMIT");
+      if (this.secrets && password)
+        await this.secrets.set(project, `db:${user}`, password);
       return result;
     } finally {
       clearTimeout(timer);
@@ -282,7 +321,7 @@ export class AgentResources {
       (_, task) => this.withLogin(args, task, true),
     );
   }
-  async sql(args) {
+  async sql(args, readonly = false) {
     const { database, sql } = args;
     return this.withLogin(args, async (c) => {
       const rows = [];
@@ -308,10 +347,11 @@ export class AgentResources {
         rows,
         rowCount,
         truncated,
-        transactional:
-          "SQL may explicitly end its transaction; interrupted writes can have uncertain outcomes.",
+        transactional: readonly
+          ? undefined
+          : "SQL may explicitly end its transaction; interrupted writes can have uncertain outcomes.",
       };
-    });
+    }, readonly);
   }
   async retire(project) {
     const { AgentData } = await import("./data.mjs");
@@ -327,6 +367,7 @@ export class AgentResources {
           removed.push(r.name);
         }
       }
+      if (this.iam && this.secrets) await this.iam.remove(project, this.secrets);
       const cleared = await data.redis("clear", { project });
       if (!cleared.complete)
         throw new InputError(

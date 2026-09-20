@@ -70,8 +70,11 @@ test("MCP authenticates every request and exposes only caller-scoped tools and r
   );
   const names = (await client.listTools()).tools.map((t) => t.name);
   assert.ok(names.includes("project_provision"));
+  assert.ok(names.includes("sql_query"));
+  assert.ok(names.includes("mail_list"));
   assert.ok(!names.includes("container_action"));
   assert.ok(!names.includes("sql_execute"));
+  assert.ok(!names.includes("database_restore"));
   const result = await client.callTool({ name: "project_list", arguments: {} });
   assert.deepEqual(result.structuredContent.projects, [{ name: "alpha" }]);
   assert.equal(
